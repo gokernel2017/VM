@@ -1,0 +1,9 @@
+
+int i, a = 10, b = 20, c = 3, d = 5;
+
+  10 * 20 + 3 * 5;  // display: 215
+
+  i = a * b + c * d;
+
+  info (1); // display the list of variables:
+
