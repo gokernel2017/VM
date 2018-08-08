@@ -169,7 +169,7 @@ case OP_CALL:
     } continue; //: case OP_CALL:
 
 case OP_HALT:
-    printf ("\nFunction vm_run()\nOP_HALT: (sp - stack): %d  sp[0].i = %d\n\n", (sp-stack), sp[0].i);
+    //printf ("\nFunction vm_run()\nOP_HALT: (sp - stack): %d  sp[0].i = %d\n\n", (sp-stack), sp[0].i);
     return;
 
     }//: switch (a->code[a->ip++])

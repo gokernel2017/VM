@@ -1,6 +1,6 @@
 //-------------------------------------------------------------------
 //
-// A Mini Language with less 1500 Lines ... using VM
+// A Mini Language with less than 1000 Lines ... using VM
 //
 // TANKS TO:
 // ----------------------------------------------
@@ -14,22 +14,39 @@
 //   make
 //
 // FILE:
-//   mini.c
+//   mini.c | mini001.c
 //
 //-------------------------------------------------------------------
 //
 #include "src/vm.h"
 
-#define STR_ERRO_SIZE   1024
+#define MINI_VERSION        001
+//
+#define LEXER_NAME_SIZE     255
+#define LEXER_TOKEN_SIZE    1024
+#define STR_ERRO_SIZE       1024
 
 enum {
     TOK_INT = 255,
+    TOK_FLOAT,
+    //-------------
     TOK_ID,
     TOK_NUMBER,
     TOK_STRING
 };
 
-typedef struct TFunc TFunc;
+typedef struct LEXER  LEXER;
+typedef struct TFunc  TFunc;
+
+struct LEXER {
+    char  *text;
+    char  name  [LEXER_NAME_SIZE];
+    char  token [LEXER_TOKEN_SIZE];
+    //
+    int   pos; // text [ pos ]
+    int   line;
+    int   tok;
+};
 struct TFunc {
     char    *name;
     char    *proto; // prototype
@@ -48,61 +65,103 @@ static TFunc stdlib[]={
   { NULL,         NULL,   NULL,                   0,    0,    NULL }
 };
 
+int erro, is_function, main_variable_type, var_type;
 
-char *str, token[1025];
-int erro, tok, line, main_variable_type, var_type, is_function;
-
-static void word_int  (ASM *a);
-static int  expr0     (ASM *a);
-static void expr1     (ASM *a);
-static void expr2     (ASM *a);
-static void expr3     (ASM *a);
-static void atom      (ASM *a);
+//-----------------------------------------------
+//-----------------  PROTOTYPES  ----------------
+//-----------------------------------------------
+//
+static void word_int (LEXER *l, ASM *a);
 //
 void Erro (char *s);
-int VarFind (char *name);
-TFunc *FuncFind (char *name);
-void execute_call (ASM *a, TFunc *func);
+static int  expr0 (LEXER *l, ASM *a);
+static void expr1 (LEXER *l, ASM *a);
+static void expr2 (LEXER *l, ASM *a);
+static void expr3 (LEXER *l, ASM *a);
+static void atom  (LEXER *l, ASM *a);
 
-int lex (void) {
-    register char *p = token;
-    *p = 0;
+
+//
+// New Lexer Implementation:
+//
+//   return 1 or 0
+//
+int lex (LEXER *l) {
+    register int c;
+    register char *temp; // pointer buffer of: lexer->token[]
+
+    temp = l->token;
+    *temp = 0;
 
 top:
-    while (*str && *str <= 32) {
-        if (*str == '\n') line++;
-        str++; // remove space
+    c = l->text[ l->pos ];
+
+    //##############  REMOVE SPACE  #############
+    if (c <= 32) {
+        if (c == 0) {
+            l->tok = 0;
+            return 0;
+        }
+        if (c == '\n') l->line++;
+        l->pos++; //<<<<<<<<<<  increment position  >>>>>>>>>>
+        goto top;
     }
 
-    if (*str == 0) return tok = 0;
+    //################  STRING  #################
+    if (c == '"') {
+        l->pos++; // '"'
+        while ((c=l->text[l->pos]) && c != '"' && c != '\r' && c != '\n') {
+            l->pos++;
+            *temp++ = c;
+        }
+        *temp = 0;
+
+        if (c=='"') l->pos++; else Erro("String erro");
+
+        l->tok = TOK_STRING;
+
+        return 1;
+    }
 
     //##########  WORD, IDENTIFIER ...  #########
-    if ((*str >= 'a' && *str <= 'z') || (*str >= 'A' && *str <= 'Z') || *str == '_') {
-        while (
-        (*str >='a' && *str <= 'z')  || (*str >= 'A' && *str <= 'Z') ||
-        (*str >= '0' && *str <= '9') || *str == '_')
-        {
-            *p++ = *str++;
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+        for (;;) {
+            c = l->text[l->pos];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+                l->pos++;
+                *temp++ = c;
+            } else break;
         }
-        *p = 0;
+        *temp = 0;
 
-        if (!strcmp(token, "int")) { return tok = TOK_INT; }
+        if (!strcmp(l->token, "int"))    { l->tok = TOK_INT;    return 1; }
+        if (!strcmp(l->token, "float"))  { l->tok = TOK_FLOAT;  return 1; }
 
-        return tok = TOK_ID;
+        l->tok = TOK_ID;
+
+        return 1;
     }
 
     //#################  NUMBER  ################
-    if (*str >= '0' && *str <= '9') {
-        while ((*str >= '0' && *str <= '9') || *str == '.')
-            *p++ = *str++;
-        *p = 0;
+    if (c >= '0' && c <= '9') {
+        for (;;) {
+            c = l->text[l->pos];
+            if ((c >= '0' && c <= '9') || c == '.') {
+                l->pos++;
+                *temp++ = c;
+            } else break;
+        }
+        *temp = 0;
 
-        return tok = TOK_NUMBER;
+        l->tok = TOK_NUMBER;
+
+        return 1;
     }
 
     //##########  REMOVE COMMENTS  ##########
-    if (*str == '/'){
-        if (str[1] == '*') { // comment block
+    if (c == '/'){
+        if (l->text[l->pos+1] == '*') { // comment block
+/*
             str += 2;
             do {
                 while (*str && *str != '*') {
@@ -112,113 +171,32 @@ top:
                 str++;
             } while (*str && *str != '/');
             if (*str=='/') str++;
-            else Erro ("BLOCK COMMENT ERRO: '/'");
+            else    asm_Erro ("BLOCK COMMENT ERRO: '/'");
             goto top;
-        } else if (str[1] == '/') { // comment line
-            str += 2;
-            while ((*str) && (*str != '\n') && (*str != '\r'))
-                str++;
+*/
+        } else if (l->text[l->pos+1] == '/') { // comment line
+            l->pos += 2;
+            while ((c=l->text[l->pos]) && (c != '\n') && (c != '\r'))
+                l->pos++;
             goto top;
         }
     }
 
-    *p++ = *str;
-    *p = 0;
-    return tok = *str++;
+    *temp++ = c;
+    *temp++ = 0;
+    l->tok = c;
+    l->pos++;
+    return 1;
 }
-static int expr0 (ASM *a) {
-    if (tok == TOK_ID) {
-        int i;
-        if ((i=VarFind(token)) != -1) {
-            char _token[255];
-            sprintf (_token, "%s", token);
-            char *_str = str; // save
-            int _tok = tok;
-            lex();
-            if (tok == '=') {
-                lex();
-                expr0(a);
-                // Copia o TOPO DA PILHA ( sp ) para a variavel ... e decrementa sp++.
-                emit_pop_var (a,i);
-                return i;
-            } else {
-                sprintf (token, "%s", _token);
-                str = _str; // restore
-                tok = _tok;
-            }
-        }
+
+void lex_set (LEXER *l, char *text, char *name) {
+    if (l && text) {
+        l->pos = 0;
+        l->line = 1;
+        l->text = text;
+        if (name)
+            strcpy (l->name, name);
     }
-    expr1(a);
-    return -1;
-}
-static void expr1 (ASM *a) { // '+' '-' : ADDITION | SUBTRACTION
-    int op;
-    expr2(a);
-    while ((op=tok) == '+' || op == '-') {
-        lex();
-        expr2(a);
-        if (main_variable_type==TYPE_FLOAT) {
-//            if (op=='+') emit_add_float (a);
-        } else { // INT
-            if (op=='+') emit_add_int (a);
-        }
-
-    }
-}
-static void expr2 (ASM *a) { // '*' '/' : MULTIPLICATION | DIVISION
-    int op;
-    expr3(a);
-    while ((op=tok) == '*' || op == '/') {
-        lex();
-        expr3(a);
-        if (main_variable_type==TYPE_FLOAT) {
-//            if (op=='*') emit_mul_float (a);
-        } else { // LONG
-            if (op=='*') emit_mul_int (a);
-        }
-    }
-}
-static void expr3 (ASM *a) { // '('
-    if (tok=='(') {
-printf ("SUB EXPRESSION (\n");
-        lex(); expr0(a);
-        if (tok != ')') {
-            Erro ("ERRO )\n");
-        }
-        lex();
-    }
-    else atom(a); // atom:
-}
-// atom:
-static void atom (ASM *a) {
-    if (tok==TOK_ID) {
-        int i;
-
-        if ((i=VarFind(token))!=-1) {
-            var_type = Gvar[i].type;
-
-            emit_push_var (a, i);
-
-            lex();
-
-        } else {
-            char buf[255];
-            sprintf(buf, "ERRO LINE(%d expr0()): Var Not Found '%s'", line, token);
-            Erro (buf);
-        }
-    }
-    else if (tok==TOK_NUMBER) {
-        if (strchr(token, '.'))
-            var_type = TYPE_FLOAT;
-
-        if (var_type==TYPE_FLOAT)
-            emit_push_float (a, atof(token));
-        else
-            emit_push_int (a, atoi(token));
-
-        lex();
-    }
-    else { Erro("Expression"); printf ("LINE: %d token(%s)\n", line, token); }
 }
 void CreateVarInt (char *name, int value) {
     TVar *v = Gvar;
@@ -252,6 +230,7 @@ void CreateVarFloat (char *name, float value) {
         v->info = NULL;
     }
 }
+
 int VarFind (char *name) {
     TVar *v = Gvar;
     int i = 0;
@@ -264,140 +243,19 @@ int VarFind (char *name) {
     return -1;
 }
 
+TFunc *FuncFind (char *name) {
+    TFunc *lib;
 
-static char strErro[STR_ERRO_SIZE];
-void Erro (char *s) {
-    erro++;
-    if ((strlen(strErro) + strlen(s)) < STR_ERRO_SIZE)
-        strcat (strErro, s);
-}
-char *ErroGet (void) {
-    if (strErro[0])
-        return strErro;
-    else
-        return NULL;
-}
-void ErroReset (void) {
-    erro = 0;
-    strErro[0] = 0;
-}
-
-void expression (ASM *a) {
-    char buf[255];
-
-    if (tok == TOK_ID || tok == TOK_NUMBER) {
-        TFunc *fi;
-
-        main_variable_type = var_type = TYPE_INT; // 0
-
-        // call a function without return:
-        // function_name (...);
-        if ((fi = FuncFind(token)) != NULL) {
-            execute_call (a, fi);
-      return;
-        }
-
-        // expression type:
-        // 10 * 20 + 3 * 5;
-        if (expr0(a) == -1) {
-            emit_pop_eax (a);
-            emit_print_eax (a,TYPE_INT);
-        }
-
-    } else {
-        sprintf (buf, "EXPRESSION ERRO LINE(%d) - Ilegar Word (%s)\n", line, token);
-        Erro (buf);
-    }
-}
-
-int stmt (ASM *a) {
-    lex();
-    switch (tok) {
-    case TOK_INT: word_int (a); return 1;
-    case ';':
-        return 1;
-    default: expression (a); return 1;
-    case 0: return 0;
-    }
-    return 1;
-}
-
-int Parse (ASM *a, char *text) {
-    str = text;
-    erro = 0;
-    line = 1;
-    asm_reset (a);
-    asm_begin (a);
-    while (!erro && stmt(a)) {
-        // ... compiling ...
-    }
-    asm_end (a);
-    return erro;
-}
-
-static void word_int (ASM *a) {
-    while (lex()) {
-        if (tok == TOK_ID) {
-            char name[255];
-            int value = 0;
-
-            strcpy (name, token); // save
-
-            lex ();
-            if (tok == '=') {
-                lex ();
-                if (tok == TOK_NUMBER)
-                    value = atoi (token);
-            }
-            if (is_function) {
-/*
-                strcpy (local.name[local.count], name);
-                local.value[local.count] = value;
-//  c7 45   fc    39 30 00 00 	movl   $0x3039,0xfffffffc(%ebp)
-//  c7 45   f8    dc 05 00 00 	movl   $0x5dc,0xfffffff8(%ebp)
-                g3(a,0xc7,0x45,(char)pos);
-                *(long*)(a->code+a->len) = value;
-                a->len += sizeof(long);
-
-                pos -= 4;
-                local.count++;
-*/
-            }
-            else CreateVarInt (name, value);
-
-        }
-        if (tok == ';') break;
-    }
-}
-
-//
-// function_name (a, b, c + d);
-//
-void execute_call (ASM *a, TFunc *func) {
-    int count = 0, pos = 0, size = 4;
-    int return_type = TYPE_INT;
-
-    // get next: '('
-    if (lex() != '(') {
-        char buf[100];
-        sprintf (buf, "ERRO LINE(%d) | Function(%s) need char: '('\n", line, func->name);
-        Erro (buf);
-        return;
+    // array:
+    lib = stdlib;
+    while (lib->name) {
+        if ((lib->name[0]==name[0]) && !strcmp(lib->name, name))
+      return lib;
+        lib++;
     }
 
-    while (lex()) {
-        expr0 (a);
-        pos += size;
-        if (count++ > 15) break;
-        if (tok == ')' || tok == ';') break;
-    }
-    if (func->proto) {
-        if (func->proto[0] == '0') return_type = TYPE_NO_RETURN;
-        if (func->proto[0] == 'f') return_type = TYPE_FLOAT;
-    }
-    emit_call (a, (void*)func->code, (UCHAR)count, return_type);
+    return NULL;
 }
-
 void lib_info (int arg) {
     switch (arg) {
     case 1: {
@@ -421,25 +279,227 @@ void lib_info (int arg) {
     }
 }
 
-TFunc *FuncFind (char *name) {
-    TFunc *lib;
 
-    // array:
-    lib = stdlib;
-    while (lib->name) {
-        if ((lib->name[0]==name[0]) && !strcmp(lib->name, name))
-      return lib;
-        lib++;
+static void word_int (LEXER *l, ASM *a) {
+    while (lex(l)) {
+        if (l->tok == TOK_ID) {
+            char name[255];
+            int value = 0;
+
+            strcpy (name, l->token); // save
+
+            lex(l);
+            if (l->tok == '=') {
+                lex (l);
+                if (l->tok == TOK_NUMBER)
+                    value = atoi (l->token);
+            }
+            if (is_function) {
+                // ... need implementation ...
+            }
+            else CreateVarInt (name, value);
+
+        }
+        if (l->tok == ';') break;
     }
-
-    return NULL;
 }
 
+static char strErro[STR_ERRO_SIZE];
+void Erro (char *s) {
+    erro++;
+    if ((strlen(strErro) + strlen(s)) < STR_ERRO_SIZE)
+        strcat (strErro, s);
+}
+char *ErroGet (void) {
+    if (strErro[0])
+        return strErro;
+    else
+        return NULL;
+}
+void ErroReset (void) {
+    erro = 0;
+    strErro[0] = 0;
+}
+static int expr0 (LEXER *l, ASM *a) {
+    if (l->tok == TOK_ID) {
+        int i;
+        if ((i=VarFind(l->token)) != -1) {
+            char token[255];
+            sprintf (token, "%s", l->token);
+            int pos = l->pos; // save
+            int tok = l->tok;
+            lex(l);
+            if (l->tok == '=') {
+                lex(l);
+                expr0(l,a);
+                // Copia o TOPO DA PILHA ( sp ) para a variavel ... e decrementa sp++.
+                emit_pop_var (a,i);
+                return i;
+            } else {
+                sprintf (l->token, "%s", token);
+                l->pos = pos; // restore
+                l->tok = tok;
+            }
+        }
+    }
+    expr1(l,a);
+    return -1;
+}
 
+static void expr1 (LEXER *l, ASM *a) { // '+' '-' : ADDITION | SUBTRACTION
+    int op;
+    expr2(l,a);
+    while ((op=l->tok) == '+' || op == '-') {
+        lex(l);
+        expr2(l,a);
+        if (main_variable_type==TYPE_FLOAT) {
+//            if (op=='+') emit_add_float (a);
+        } else { // INT
+            if (op=='+') emit_add_int (a);
+        }
 
-int main (int argc, char *argv[]) {
+    }
+}
+static void expr2 (LEXER *l, ASM *a) { // '*' '/' : MULTIPLICATION | DIVISION
+    int op;
+    expr3(l,a);
+    while ((op=l->tok) == '*' || op == '/') {
+        lex(l);
+        expr3(l,a);
+        if (main_variable_type==TYPE_FLOAT) {
+//            if (op=='*') emit_mul_float (a);
+        } else { // LONG
+            if (op=='*') emit_mul_int (a);
+        }
+    }
+}
+static void expr3 (LEXER *l, ASM *a) { // '('
+    if (l->tok=='(') {
+        lex(l); expr0(l,a);
+        if (l->tok != ')') {
+            Erro ("ERRO )\n");
+        }
+        lex(l);
+    }
+    else atom(l,a); // atom:
+}
+// atom:
+static void atom (LEXER *l, ASM *a) {
+    if (l->tok==TOK_ID) {
+        int i;
+
+        if ((i=VarFind(l->token))!=-1) {
+            var_type = Gvar[i].type;
+
+            emit_push_var (a,i);
+
+            lex(l);
+
+        } else {
+            char buf[255];
+            sprintf(buf, "ERRO LINE(%d expr0()): Var Not Found '%s'", l->line, l->token);
+            Erro (buf);
+        }
+    }
+    else if (l->tok==TOK_NUMBER) {
+        if (strchr(l->token, '.'))
+            var_type = TYPE_FLOAT;
+
+        if (var_type==TYPE_FLOAT)
+            emit_push_float (a, atof(l->token));
+        else
+            emit_push_int (a, atoi(l->token));
+
+        lex(l);
+    }
+    else { Erro("Expression"); printf ("LINE: %d token(%s)\n", l->line, l->token); }
+}
+
+//
+// function_name (a, b, c + d);
+//
+void execute_call (LEXER *l, ASM *a, TFunc *func) {
+    int count = 0, pos = 0, size = 4;
+    int return_type = TYPE_INT;
+
+    // get next: '('
+    lex(l);
+    if (l->tok != '(') {
+        char buf[100];
+        sprintf (buf, "ERRO LINE(%d) | Function(%s) need char: '('\n", l->line, func->name);
+        Erro (buf);
+        return;
+    }
+
+    while (lex(l)) {
+        expr0 (l,a);
+        pos += size;
+        if (count++ > 15) break;
+        if (l->tok == ')' || l->tok == ';') break;
+    }
+    if (func->proto) {
+        if (func->proto[0] == '0') return_type = TYPE_NO_RETURN;
+        if (func->proto[0] == 'f') return_type = TYPE_FLOAT;
+    }
+    emit_call (a, (void*)func->code, (UCHAR)count, return_type);
+}
+
+void expression (LEXER *l, ASM *a) {
+    char buf[255];
+
+    if (l->tok == TOK_ID || l->tok == TOK_NUMBER) {
+        TFunc *fi;
+
+        main_variable_type = var_type = TYPE_INT; // 0
+
+        // call a function without return:
+        // function_name (...);
+        if ((fi = FuncFind(l->token)) != NULL) {
+            execute_call (l, a, fi);
+      return;
+        }
+
+        // expression type:
+        // 10 * 20 + 3 * 5;
+        if (expr0(l,a) == -1) {
+            emit_pop_eax (a);
+            emit_print_eax (a,TYPE_INT);
+        }
+
+    } else {
+        sprintf (buf, "EXPRESSION ERRO LINE(%d) - Ilegar Word (%s)\n", l->line, l->token);
+        Erro (buf);
+    }
+}
+
+int stmt (LEXER *l, ASM *a) {
+    lex(l);
+    switch (l->tok) {
+    case TOK_INT: word_int    (l,a); return 1;
+    default:      expression  (l,a); return 1;
+    case ';':
+        return 1;
+    case 0: return 0;
+    }
+    return 1;
+}
+
+int Parse (LEXER *l, ASM *a, char *text, char *name) {
+    lex_set (l, text, name);
+    ErroReset ();
+    asm_reset (a);
+    asm_begin (a);
+    while (!erro && stmt(l,a)) {
+        // ... compiling ...
+    }
+    asm_end (a);
+    return erro;
+}
+
+int main (int argc, char **argv) {
     FILE *fp;
     ASM *a;
+    LEXER lexer;
 
     if ((a = asm_new (ASM_DEFAULT_SIZE)) == NULL)
   return -1;
@@ -449,15 +509,51 @@ int main (int argc, char *argv[]) {
 #define PROG_SIZE  50000
         char prog [PROG_SIZE];
         while ((c=getc(fp))!=EOF) prog[i++] = c; // store prog[];
+        prog[i] = 0;
         fclose (fp);
-
-        if (Parse(a,prog)==0)
-        {
+        if (Parse(&lexer, a, prog, argv[1])==0) {
             vm_run (a);
         }
         else printf ("ERRO:\n%s\n", ErroGet());
+
+    } else {
+
+//-------------------------------------------
+// INTERACTIVE MODE:
+//-------------------------------------------
+
+        char string [1024];
+
+        printf ("__________________________________________________________________\n\n");
+        printf (" MINI Language Version: %d.%d.%d\n\n", 0, 0, 1);
+        printf (" To exit type: 'quit' or 'q'\n");
+        printf ("__________________________________________________________________\n\n");
+
+        for (;;) {
+            printf ("MINI > ");
+            gets (string);
+            if (!strcmp(string, "quit") || !strcmp(string, "q")) break;
+
+            if (!strcmp(string, "clear") || !strcmp(string, "cls")) {
+                #ifdef WIN32
+                system("cls");
+                #endif
+                #ifdef __linux__
+                system("clear");
+                #endif
+                continue;
+            }
+
+            if (*string==0) strcpy(string, "info(0);");
+
+            if (Parse(&lexer, a, string, "stdin")==0)
+            {
+                vm_run (a);
+            }
+            else printf ("\n%s\n", ErroGet());
+        }
     }
-    else printf ("\nUSAGE:\n  %s <file.mini>\n\n", argv[0]);
+
 
     printf ("Exiting With Sucess: \n");
 
