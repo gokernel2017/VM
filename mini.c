@@ -56,12 +56,14 @@ struct TFunc {
     TFunc   *next;
 };
 void lib_info (int arg);
+int lib_add (int a, int b);
 static TFunc stdlib[]={
   //-----------------------------------------------------------------
   // char*        char*   UCHAR*/ASM*             int   int   FUNC*
   // name         proto   code                    type  len   next
   //-----------------------------------------------------------------
   { "info",       "0i",   (UCHAR*)lib_info,       0,    0,    NULL },
+  { "add",        "iii",  (UCHAR*)lib_add,       0,    0,    NULL },
   { NULL,         NULL,   NULL,                   0,    0,    NULL }
 };
 
@@ -74,6 +76,8 @@ int erro, is_function, main_variable_type, var_type;
 static void word_int (LEXER *l, ASM *a);
 //
 void Erro (char *s);
+//
+static int  see   (LEXER *l);
 static int  expr0 (LEXER *l, ASM *a);
 static void expr1 (LEXER *l, ASM *a);
 static void expr2 (LEXER *l, ASM *a);
@@ -198,6 +202,16 @@ void lex_set (LEXER *l, char *text, char *name) {
             strcpy (l->name, name);
     }
 }
+static int see (LEXER *l) {
+    char *s = l->text+l->pos;
+    while (*s) {
+        if (*s=='\n' || *s==' ' || *s==9 || *s==13) {
+            s++;
+        } else return *s;
+    }
+    return 0;
+}
+
 void CreateVarInt (char *name, int value) {
     TVar *v = Gvar;
     int i = 0;
@@ -278,7 +292,9 @@ void lib_info (int arg) {
         printf ("USAGE(%d): info(1);\n\nInfo Options:\n 1: Variables\n 2: Functions\n 3: Defines\n 4: Words\n",arg);
     }
 }
-
+int lib_add (int a, int b) {
+    return a + b;
+}
 
 static void word_int (LEXER *l, ASM *a) {
     while (lex(l)) {
@@ -419,7 +435,7 @@ static void atom (LEXER *l, ASM *a) {
 // function_name (a, b, c + d);
 //
 void execute_call (LEXER *l, ASM *a, TFunc *func) {
-    int count = 0, pos = 0, size = 4;
+    int count = 0;
     int return_type = TYPE_INT;
 
     // get next: '('
@@ -433,10 +449,10 @@ void execute_call (LEXER *l, ASM *a, TFunc *func) {
 
     while (lex(l)) {
         expr0 (l,a);
-        pos += size;
         if (count++ > 15) break;
         if (l->tok == ')' || l->tok == ';') break;
     }
+
     if (func->proto) {
         if (func->proto[0] == '0') return_type = TYPE_NO_RETURN;
         if (func->proto[0] == 'f') return_type = TYPE_FLOAT;
@@ -448,16 +464,51 @@ void expression (LEXER *l, ASM *a) {
     char buf[255];
 
     if (l->tok == TOK_ID || l->tok == TOK_NUMBER) {
+        int i;
         TFunc *fi;
 
         main_variable_type = var_type = TYPE_INT; // 0
 
+        //
         // call a function without return:
-        // function_name (...);
+        //   function_name (...);
+        //
         if ((fi = FuncFind(l->token)) != NULL) {
             execute_call (l, a, fi);
       return;
         }
+
+        if ((i = VarFind(l->token)) != -1) {
+
+            main_variable_type = var_type = Gvar[i].type;
+
+            if (see(l) == '=') {
+                char token[255];
+                sprintf (token, "%s", l->token);
+                int pos = l->pos; // save
+                int tok = l->tok;
+                lex(l); // "="
+                lex(l); // "function_name"
+                //
+                // call a function with return:
+                //   var = function_name (...);
+                //
+                if ((fi = FuncFind(l->token)) != NULL) {
+
+                    execute_call (l, a, fi);
+
+                    emit_mov_eax_var(a,i); // copy return function to var:
+
+                    return;
+                } else {
+                    // .. !restore token ...
+                    sprintf (l->token, "%s", token);
+                    l->pos = pos; // restore
+                    l->tok = tok;
+                }
+            }//: if (see(l) == '=')
+
+        }//: if ((i = VarFind(l->token)) != -1)
 
         // expression type:
         // 10 * 20 + 3 * 5;
