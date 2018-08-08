@@ -64,6 +64,8 @@ enum {
 
     OP_PRINT_EAX,
 
+    OP_MOV_EAX_VAR,
+
     // Call a Native C Function ... use the stack to pass arguments,
     // the return value in ( ret.? )
     //   emit in 32 bits: 7 bytes
@@ -107,27 +109,28 @@ extern TVar   Gvar[GVAR_SIZE]; // global:
 //-------------------------  ASM PUBLIC API  ------------------------
 //-------------------------------------------------------------------
 //
-extern void   vm_run        (ASM *a);
+extern void   vm_run          (ASM *a);
 //
-extern ASM  * asm_new       (UINT size);
-extern void   asm_reset     (ASM *a);
-extern void   asm_begin     (ASM *a);
-extern void   asm_end       (ASM *a);
+extern ASM  * asm_new         (UINT size);
+extern void   asm_reset       (ASM *a);
+extern void   asm_begin       (ASM *a);
+extern void   asm_end         (ASM *a);
 
 //-----------------------------------------------
 //-----------------  EMIT / GEN  ----------------
 //-----------------------------------------------
 //
-extern void emit_push_int   (ASM *a, int i);
-extern void emit_push_float (ASM *a, float value);
-extern void emit_push_var   (ASM *a, UCHAR index);
-extern void emit_pop_var    (ASM *a, UCHAR i);
-extern void emit_pop_eax    (ASM *a);
-extern void emit_mul_int    (ASM *a);
-extern void emit_add_int    (ASM *a);
-extern void emit_print_eax  (ASM *a, UCHAR type);
-extern void emit_halt       (ASM *a);
-extern void emit_call       (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
+extern void emit_push_int     (ASM *a, int i);
+extern void emit_push_float   (ASM *a, float value);
+extern void emit_push_var     (ASM *a, UCHAR index);
+extern void emit_pop_var      (ASM *a, UCHAR i);
+extern void emit_pop_eax      (ASM *a);
+extern void emit_mul_int      (ASM *a);
+extern void emit_add_int      (ASM *a);
+extern void emit_print_eax    (ASM *a, UCHAR type);
+extern void emit_mov_eax_var  (ASM *a, UCHAR index);
+extern void emit_call         (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
+extern void emit_halt         (ASM *a);
 
 #ifdef __cplusplus
 }

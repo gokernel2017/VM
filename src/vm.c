@@ -115,6 +115,11 @@ case OP_PRINT_EAX: {
     }
     } continue;
 
+case OP_MOV_EAX_VAR: {
+    UCHAR i = (UCHAR)a->code[a->ip++];
+    Gvar[i].value = eax;
+    } continue;
+
 case OP_MUL_INT: sp[-1].i *= sp[0].i; sp--; continue;
 case OP_DIV_INT: sp[-1].i /= sp[0].i; sp--; continue;
 case OP_ADD_INT: sp[-1].i += sp[0].i; sp--; continue;
@@ -293,3 +298,8 @@ void emit_call (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
     *a->p++ = arg_count;
     *a->p++ = return_type;
 }
+void emit_mov_eax_var (ASM *a, UCHAR index) {
+    *a->p++ = OP_MOV_EAX_VAR;
+    *a->p++ = index;
+}
+
