@@ -55,15 +55,15 @@ struct TFunc {
     int     len;
     TFunc   *next;
 };
-void lib_info (int arg);
-int lib_add (int a, int b);
+void  lib_info  (int arg);
+int   lib_add   (int a, int b);
 static TFunc stdlib[]={
   //-----------------------------------------------------------------
   // char*        char*   UCHAR*/ASM*             int   int   FUNC*
   // name         proto   code                    type  len   next
   //-----------------------------------------------------------------
   { "info",       "0i",   (UCHAR*)lib_info,       0,    0,    NULL },
-  { "add",        "iii",  (UCHAR*)lib_add,       0,    0,    NULL },
+  { "add",        "iii",  (UCHAR*)lib_add,        0,    0,    NULL },
   { NULL,         NULL,   NULL,                   0,    0,    NULL }
 };
 
@@ -83,7 +83,6 @@ static void expr1 (LEXER *l, ASM *a);
 static void expr2 (LEXER *l, ASM *a);
 static void expr3 (LEXER *l, ASM *a);
 static void atom  (LEXER *l, ASM *a);
-
 
 //
 // New Lexer Implementation:
@@ -283,8 +282,37 @@ void lib_info (int arg) {
         }
         } break;
 
-    case 2:
+    case 2: {
+        TFunc *fi = stdlib;
+        printf ("FUNCTIONS:\n---------------\n");
+        while (fi->name) {
+            if(fi->proto){
+                char *s=fi->proto;
+                if (*s=='0') printf ("void  ");
+                else
+                if (*s=='i') printf ("int   ");
+                else
+                if (*s=='f') printf ("float ");
+                else
+                if (*s=='s') printf ("char  *");
+                else
+                if (*s=='p') printf ("void * ");
+                printf ("%s (", fi->name);
+                s++;
+                while(*s){
+                    if (*s=='i') printf ("int");
+                    else
+                    if (*s=='f') printf ("float");
+                    s++;
+                    if(*s) printf (", ");
+                }
+                printf (");\n");
+            }
+            fi++;
+        }
+        }
         break;
+
     case 3:
         break;
 
@@ -524,7 +552,7 @@ void expression (LEXER *l, ASM *a) {
 }
 
 int stmt (LEXER *l, ASM *a) {
-    lex(l);
+    lex (l);
     switch (l->tok) {
     case TOK_INT: word_int    (l,a); return 1;
     default:      expression  (l,a); return 1;
