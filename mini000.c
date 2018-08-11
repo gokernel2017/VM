@@ -26,9 +26,11 @@
 
 enum {
     TOK_INT = 255,
+    TOK_IF,
     TOK_ID,
     TOK_NUMBER,
-    TOK_STRING
+    TOK_STRING,
+    TOK_EQUAL_EQUAL
 };
 
 typedef struct TFunc TFunc;
@@ -55,6 +57,7 @@ char *str, token[1025];
 int erro, tok, line, main_variable_type, var_type, is_function;
 
 static void word_int  (ASM *a);
+static void word_if   (ASM *a); // if (a > b && c < d && i == 10 && k) { ... }
 static int  expr0     (ASM *a);
 static void expr1     (ASM *a);
 static void expr2     (ASM *a);
@@ -66,7 +69,10 @@ int VarFind (char *name);
 TFunc *FuncFind (char *name);
 void execute_call (ASM *a, TFunc *func);
 
+static int see (void);
+
 int lex (void) {
+    int c;
     register char *p = token;
     *p = 0;
 
@@ -87,7 +93,8 @@ top:
         *p = 0;
         if (*str=='"') str++; else Erro("String erro");
 
-        return tok = TOK_STRING;
+        //return tok = TOK_STRING;
+        return TOK_STRING;
     }
 
     //##########  WORD, IDENTIFIER ...  #########
@@ -100,9 +107,10 @@ top:
         }
         *p = 0;
 
-        if (!strcmp(token, "int")) { return tok = TOK_INT; }
+        if (!strcmp(token, "int")) { return TOK_INT; }
+        if (!strcmp(token, "if")) { return TOK_IF; }
 
-        return tok = TOK_ID;
+        return TOK_ID;
     }
 
     //#################  NUMBER  ################
@@ -111,7 +119,7 @@ top:
             *p++ = *str++;
         *p = 0;
 
-        return tok = TOK_NUMBER;
+        return TOK_NUMBER;
     }
 
     //##########  REMOVE COMMENTS  ##########
@@ -136,9 +144,22 @@ top:
         }
     }
 
+        *p++ = *str;
+        *p = 0;
+
+        if (str[0]=='=' && str[1]=='=') { *p++ = str[1]; *p=0; str += 2; printf ("token(%s) == \n", token); return TOK_EQUAL_EQUAL; }
+/*
+    if (str[0] == '=' && str[1] == '=') {
+        str += 2;
+        token[0] = '='; token[1] = '='; token[2] = 0;
+        printf ("lex token(%s)\n", token);
+        tok = TOK_EQUAL_EQUAL;
+        return TOK_EQUAL_EQUAL;
+    }
+*/
     *p++ = *str;
     *p = 0;
-    return tok = *str++;
+    return *str++;
 }
 static int expr0 (ASM *a) {
     if (tok == TOK_ID) {
@@ -148,9 +169,9 @@ static int expr0 (ASM *a) {
             sprintf (_token, "%s", token);
             char *_str = str; // save
             int _tok = tok;
-            lex();
+            tok=lex();
             if (tok == '=') {
-                lex();
+                tok=lex();
                 expr0(a);
                 // Copia o TOPO DA PILHA ( sp ) para a variavel ... e decrementa sp++.
                 emit_pop_var (a,i);
@@ -169,7 +190,7 @@ static void expr1 (ASM *a) { // '+' '-' : ADDITION | SUBTRACTION
     int op;
     expr2(a);
     while ((op=tok) == '+' || op == '-') {
-        lex();
+        tok=lex();
         expr2(a);
         if (main_variable_type==TYPE_FLOAT) {
 //            if (op=='+') emit_add_float (a);
@@ -183,7 +204,7 @@ static void expr2 (ASM *a) { // '*' '/' : MULTIPLICATION | DIVISION
     int op;
     expr3(a);
     while ((op=tok) == '*' || op == '/') {
-        lex();
+        tok=lex();
         expr3(a);
         if (main_variable_type==TYPE_FLOAT) {
 //            if (op=='*') emit_mul_float (a);
@@ -195,11 +216,11 @@ static void expr2 (ASM *a) { // '*' '/' : MULTIPLICATION | DIVISION
 static void expr3 (ASM *a) { // '('
     if (tok=='(') {
 printf ("SUB EXPRESSION (\n");
-        lex(); expr0(a);
+        tok=lex(); expr0(a);
         if (tok != ')') {
             Erro ("ERRO )\n");
         }
-        lex();
+        tok=lex();
     }
     else atom(a); // atom:
 }
@@ -213,7 +234,7 @@ static void atom (ASM *a) {
 
             emit_push_var (a, i);
 
-            lex();
+            tok=lex();
 
         } else {
             char buf[255];
@@ -230,7 +251,7 @@ static void atom (ASM *a) {
         else
             emit_push_int (a, atoi(token));
 
-        lex();
+        tok=lex();
     }
     else { Erro("Expression"); printf ("LINE: %d token(%s)\n", line, token); }
 }
@@ -325,9 +346,16 @@ void expression (ASM *a) {
 }
 
 int stmt (ASM *a) {
-    lex();
+    tok=lex();
     switch (tok) {
+    case '{':
+        while (!erro && tok && tok != '}') stmt(a);
+        //----------------------------------------------------
+        //do_block (l,a); //<<<<<<<<<<  no recursive  >>>>>>>>>>
+        //----------------------------------------------------
+        return 1;
     case TOK_INT: word_int (a); return 1;
+    case TOK_IF:  word_if (a);  return 1;
     case ';':
         return 1;
     default: expression (a); return 1;
@@ -349,17 +377,27 @@ int Parse (ASM *a, char *text) {
     return erro;
 }
 
+static int see (void) {
+    char *s = str;
+    while (*s) {
+        if (*s=='\n' || *s==' ' || *s==9 || *s==13) {
+            s++;
+        } else return *s;
+    }
+    return 0;
+}
+
 static void word_int (ASM *a) {
-    while (lex()) {
+    while ((tok=lex())) {
         if (tok == TOK_ID) {
             char name[255];
             int value = 0;
 
             strcpy (name, token); // save
 
-            lex ();
+            tok=lex ();
             if (tok == '=') {
-                lex ();
+                tok=lex ();
                 if (tok == TOK_NUMBER)
                     value = atoi (token);
             }
@@ -382,6 +420,72 @@ static void word_int (ASM *a) {
         }
         if (tok == ';') break;
     }
+}
+static void word_if (ASM *a) { // if (a > b && c < d && i == 10 && k) { ... }
+    //**** to "push/pop"
+    static char array[20][20];
+    static int if_count_total = 0;
+    static int if_count = 0;
+    int is_negative;
+    int _tok=0;
+
+    if (lex()!='(') { Erro ("ERRO SINTAX (if) need char: '('\n"); return; }
+
+    if_count++;
+    sprintf (array[if_count], "_IF%d", if_count_total++);
+
+    while (!erro && lex()) { // pass arguments: if (a > b) { ... }
+        is_negative = 0;
+
+        if (tok == '!') { is_negative = 1; lex(); }
+
+        expr0 (a);
+
+        if (erro) return;
+
+/*
+        if (tok == ')' || tok == TOK_AND_AND) asm_pop_eax(a); // 58     pop   %eax
+        else                                  g (a,0x5a); // 5a     pop   %edx
+*/
+        _tok = tok;
+        switch (_tok) {
+/*
+        case ')': // if (a) { ... }
+        case TOK_AND_AND:
+            g2(a,0x85,0xc0); // 85 c0    test   %eax,%eax
+            if (is_negative == 0) asm_je  (a, array[if_count]);
+            else                  asm_jne (a, array[if_count]);
+            break;
+*/
+
+        case '>':             // if (a > b)  { jle }
+        case '<':             // if (a < b)  { jge }
+        case TOK_EQUAL_EQUAL: // if (a == b) { jne }
+//        case TOK_NOT_EQUAL:   // if (a != b) { jeq }
+            tok=lex();
+            expr0(a);
+            emit_cmp_int (a);
+            if (tok=='>') emit_jump_jle (a,array[if_count]);
+            if (tok=='<') emit_jump_jge (a,array[if_count]);
+            if (tok==TOK_EQUAL_EQUAL) emit_jump_jne (a,array[if_count]); // ==
+//            if (tok==TOK_NOT_EQUAL) emit_jump_jeq (a,array[if_count]); // !=
+            break;
+/*
+        // if (a != b) { je }
+        case TOK_NOT_EQUAL: // !=
+            tok=lex(); expr0(a); asm_pop_eax(a); // 58     : pop   %eax
+            asm_cmp_eax_edx(a);                 // 39 c2  : cmp   %eax,%edx
+            asm_je (a,array[if_count]);
+            break;
+*/
+        }//:switch(t->tok)
+        if (tok==')') break;
+    }
+
+    if (see()=='{') stmt (a); else Erro ("word(if) need start block: '{'\n");
+
+    asm_label (a, array[if_count]);
+    if_count--;
 }
 
 //

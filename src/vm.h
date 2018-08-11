@@ -62,6 +62,16 @@ enum {
     OP_ADD_FLOAT,
     OP_SUB_FLOAT,
 
+    // compare and jumps:
+    OP_CMP_INT,
+    OP_JUMP_JMP,
+    OP_JUMP_JGE,
+    OP_JUMP_JLE,
+    OP_JUMP_JEQ,
+    OP_JUMP_JNE,
+    OP_JUMP_JG,
+    OP_JUMP_JL,
+
     OP_PRINT_EAX,
 
     OP_MOV_EAX_VAR,
@@ -70,7 +80,9 @@ enum {
     // the return value in ( ret.? )
     //   emit in 32 bits: 7 bytes
     //   emit in 64 bits: 11 bytes
-    OP_CALL
+    OP_CALL,
+
+    OP_CALL_VM
 };
 enum {
     TYPE_INT = 0,
@@ -85,9 +97,29 @@ enum {
 //-------------------  STRUCT  ------------------
 //-----------------------------------------------
 //
-typedef struct ASM      ASM; // opaque struct in file: 'vm.c'
-typedef union  VALUE    VALUE;
-typedef struct TVar     TVar;
+typedef struct ASM        ASM; // opaque struct in file: 'vm.c'
+typedef struct ASM_label  ASM_label;
+typedef struct ASM_jump   ASM_jump;
+typedef union  VALUE      VALUE;
+typedef struct TVar       TVar;
+
+struct ASM { // private struct
+    UCHAR     *p;
+    UCHAR     *code;
+    int       ip;
+    ASM_label *label;
+    ASM_jump  *jump;
+};
+struct ASM_label { // private struct
+    char      *name;
+    int       pos;
+    ASM_label *next;
+};
+struct ASM_jump { // private struct
+    char      *name;
+    int       pos;
+    ASM_jump  *next;
+};
 
 union VALUE {
     int     i;
@@ -115,6 +147,8 @@ extern ASM  * asm_new         (UINT size);
 extern void   asm_reset       (ASM *a);
 extern void   asm_begin       (ASM *a);
 extern void   asm_end         (ASM *a);
+extern UINT   asm_get_len     (ASM *a);
+extern void   asm_label       (ASM *a, char *name);
 
 //-----------------------------------------------
 //-----------------  EMIT / GEN  ----------------
@@ -130,7 +164,14 @@ extern void emit_add_int      (ASM *a);
 extern void emit_print_eax    (ASM *a, UCHAR type);
 extern void emit_mov_eax_var  (ASM *a, UCHAR index);
 extern void emit_call         (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
+extern void emit_call_vm      (ASM *a, void *func, UCHAR arg_count);
 extern void emit_halt         (ASM *a);
+
+extern void emit_cmp_int      (ASM *a);
+extern void emit_jump_jge     (ASM *a, char *name);
+extern void emit_jump_jle     (ASM *a, char *name);
+extern void emit_jump_jeq     (ASM *a, char *name);
+extern void emit_jump_jne     (ASM *a, char *name);
 
 #ifdef __cplusplus
 }

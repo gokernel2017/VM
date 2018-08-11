@@ -26,26 +26,6 @@
 
 #define STACK_SIZE    1024
 
-typedef struct ASM_label  ASM_label;
-typedef struct ASM_jump   ASM_jump;
-
-struct ASM { // private struct
-    UCHAR     *p;
-    UCHAR     *code;
-    int       ip;
-    ASM_label *label;
-    ASM_jump  *jump;
-};
-struct ASM_label { // private struct
-    char      *name;
-    int       pos;
-    ASM_label *next;
-};
-struct ASM_jump { // private struct
-    char      *name;
-    int       pos;
-    ASM_jump  *next;
-};
 struct data {
     int a;
     int b;
@@ -61,7 +41,12 @@ TVar    Gvar [GVAR_SIZE]; // global:
 static VALUE  stack [STACK_SIZE];
 static VALUE *sp = stack;
 static VALUE eax;
+static int callvm_stage2_position = 0;
+static int flag;
 
+void callvm (ASM *a) {
+    vm_run(a);
+}
 //-------------------------------------------------------------------
 //--------------------------  START VM RUN  -------------------------
 //-------------------------------------------------------------------
@@ -95,10 +80,13 @@ case OP_PUSH_VAR: {
 
 case OP_POP_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
+    Gvar[i].value = sp[0]; break;
+/*
     switch (Gvar[i].type) {
     case TYPE_INT:  Gvar[i].value.i = sp->i; break;
     case TYPE_FLOAT: Gvar[i].value.f = sp->f; break;
     }
+*/
     sp--;
     } continue;
 
@@ -129,6 +117,82 @@ case OP_MUL_FLOAT: sp[-1].f *= sp[0].f; sp--; continue;
 case OP_DIV_FLOAT: sp[-1].f /= sp[0].f; sp--; continue;
 case OP_ADD_FLOAT: sp[-1].f += sp[0].f; sp--; continue;
 case OP_SUB_FLOAT: sp[-1].f -= sp[0].f; sp--; continue;
+
+case OP_CMP_INT:
+    sp--;
+    flag = (int)(sp[0].i - sp[1].i);
+    sp--;
+    continue;
+//
+// simple_language_0.9.0
+//
+case OP_JUMP_JMP:
+    a->ip = *(unsigned short*)(a->code+a->ip);
+    continue;
+
+/*
+op_jeq: if (!f)   { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+op_jne: if (f)    { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+op_jge: if (f>=0) { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+op_jle: if (f<=0) { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+op_jg:  if (f>0)  { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+op_jl:  if (f<0)  { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+*/
+
+/*
+			 case cmpeq_i:
+				 sp[-1]=sp[-1] == sp[0];
+				 sp--;
+				 break;
+			 case cmpne_i:
+				 sp[-1]=sp[-1] != sp[0];
+				 sp--;
+				 break;
+
+op_jeq: if (!f)   { goto *(ip = code + ip->value.l)->jmp; } NEXT;
+*/
+
+case OP_JUMP_JEQ: // !=
+    if (!flag)
+        a->ip = *(unsigned short*)(a->code+a->ip);
+    else
+        a->ip += sizeof(unsigned short);
+    continue;
+
+case OP_JUMP_JNE: // ==
+    if (flag)
+        a->ip = *(unsigned short*)(a->code+a->ip);
+    else
+        a->ip += sizeof(unsigned short);
+    continue;
+
+case OP_JUMP_JGE: // =<
+    if (flag >= 0)
+        a->ip = *(unsigned short*)(a->code+a->ip);
+    else
+        a->ip += sizeof(unsigned short);
+    continue;
+
+case OP_JUMP_JLE: // >=
+    if (flag <= 0)
+        a->ip = *(unsigned short*)(a->code+a->ip);
+    else
+        a->ip += sizeof(unsigned short);
+    continue;
+
+case OP_JUMP_JG:
+    if (flag > 0)
+        a->ip = *(unsigned short*)(a->code+a->ip);
+    else
+        a->ip += sizeof(unsigned short);
+    continue;
+
+case OP_JUMP_JL:
+    if (flag < 0)
+        a->ip = *(unsigned short*)(a->code+a->ip);
+    else
+        a->ip += sizeof(unsigned short);
+    continue;
 
 //
 // call a C Function
@@ -172,6 +236,63 @@ case OP_CALL:
     }//: switch (arg_count)
 
     } continue; //: case OP_CALL:
+
+
+
+// call a VM Function
+//
+case OP_CALL_VM: {
+    ASM *local = *(void**)(a->code+a->ip);
+    a->ip += sizeof(void*);
+    UCHAR arg_count = (UCHAR)(a->code[a->ip++]); //printf ("CALL ARG_COUNT = %d\n", arg_count);
+
+/*
+    switch(arg_count){
+    case 1: local->arg[0] = sp[0]; sp--; break;
+    case 2:
+        local->arg[1] = sp[0]; sp--;
+        local->arg[0] = sp[0]; sp--;
+        break;
+    case 3:
+        local->arg[2] = sp[0]; sp--;
+        local->arg[1] = sp[0]; sp--;
+        local->arg[0] = sp[0]; sp--;
+        break;
+    case 4:
+        local->arg[3] = sp[0]; sp--;
+        local->arg[2] = sp[0]; sp--;
+        local->arg[1] = sp[0]; sp--;
+        local->arg[0] = sp[0]; sp--;
+        break;
+    }//: switch(arg_count)
+*/
+//printf ("call_vm arg_count: %d\n", arg_count);
+
+    if (local == a) {
+
+        //-----------------------------------------------------------
+        //
+        // here is position the next opcode BEFORE of recursive function.
+        //
+        //-----------------------------------------------------------
+        //
+        callvm_stage2_position = local->ip;
+        a->ip = 0;
+        //printf ("Todo antes da FUNCAO pos(%d) RECURSIVA CODE: %d\n", callvm_stage2_position, local->code[callvm_stage2_position]);
+    } else {
+        //printf ("PRIMEIRA VEZ EXECUTANDO\n");
+        callvm_stage2_position = 0;
+        local->ip = 0;
+    }
+
+    callvm (local);
+
+    local->ip = callvm_stage2_position;
+    //local->ip = vm->ip - 5;
+
+    } continue;
+
+
 
 case OP_HALT:
     //printf ("\nFunction vm_run()\nOP_HALT: (sp - stack): %d  sp[0].i = %d\n\n", (sp-stack), sp[0].i);
@@ -250,6 +371,31 @@ void asm_end (ASM *a) {
     }
 }
 
+void asm_label (ASM *a, char *name) {
+    if (name) {
+        ASM_label *lab;
+        ASM_label *l = a->label;
+
+        // find if exist:
+        while (l) {
+            if (!strcmp(l->name, name)) {
+                printf ("Label Exist: '%s'\n", l->name);
+                return;
+            }
+            l = l->next;
+        }
+
+        if ((lab = (ASM_label*)malloc(sizeof(ASM_label))) != NULL) {
+            lab->name = strdup (name);
+            lab->pos  = (a->p - a->code); // the index
+
+            // add on top:
+            lab->next = a->label;
+            a->label = lab;
+        }
+    }
+}
+
 void emit_push_int (ASM *a, int i) {
     *a->p++ = OP_PUSH_INT;
     *(int*)a->p = i;
@@ -298,8 +444,58 @@ void emit_call (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
     *a->p++ = arg_count;
     *a->p++ = return_type;
 }
+
+void emit_call_vm (ASM *a, void *func, UCHAR arg_count) {
+    *a->p++ = OP_CALL_VM;
+    *(void**)a->p = func;
+    a->p += sizeof(void*);
+    *a->p++ = arg_count;
+}
+
+
 void emit_mov_eax_var (ASM *a, UCHAR index) {
     *a->p++ = OP_MOV_EAX_VAR;
     *a->p++ = index;
+}
+
+UINT asm_get_len (ASM *a) {
+    return (a->p - a->code);
+}
+
+void emit_cmp_int (ASM *a) {
+    *a->p++ = OP_CMP_INT;
+}
+
+static void conditional_jump (ASM *vm, char *name, UCHAR type) {
+    ASM_jump *jump;
+
+    if (name && (jump = (ASM_jump*)malloc (sizeof(ASM_jump))) != NULL) {
+
+        *vm->p++ = type;
+
+        jump->name = strdup (name);
+        jump->pos  = (vm->p - vm->code); // the index
+
+        // add on top:
+        jump->next = vm->jump;
+        vm->jump = jump;
+
+        // to change ...
+        *(unsigned short*)vm->p = (jump->pos+2); // the index
+        vm->p += sizeof(unsigned short);
+    }
+}
+
+void emit_jump_jge (ASM *a, char *name) {
+    conditional_jump (a, name, OP_JUMP_JGE);
+}
+void emit_jump_jle (ASM *a, char *name) {
+    conditional_jump (a, name, OP_JUMP_JLE);
+}
+void emit_jump_jeq (ASM *a, char *name) {
+    conditional_jump (a, name, OP_JUMP_JEQ);
+}
+void emit_jump_jne (ASM *a, char *name) {
+    conditional_jump (a, name, OP_JUMP_JNE);
 }
 
