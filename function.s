@@ -21,8 +21,8 @@ function add_b (arg1, arg2) {
   "\nSimple Function Example:\n"
 
   //-------------------------
-  // display a := 200;
-  // display b := 90;
+  // display a := 10;
+  // display b := 20;
   //-------------------------
   "\n"
   "Value a: " a;
