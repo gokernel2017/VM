@@ -48,6 +48,7 @@ enum {
     OP_PUSH_FLOAT,
 
     OP_PUSH_VAR,
+    OP_PUSH_ARG,
 
     OP_POP_VAR,
     OP_POP_EAX,
@@ -73,6 +74,7 @@ enum {
     OP_JUMP_JL,
 
     OP_PRINT_EAX,
+    OP_PRINT_STRING,
 
     OP_MOV_EAX_VAR,
 
@@ -82,7 +84,8 @@ enum {
     //   emit in 64 bits: 11 bytes
     OP_CALL,
 
-    OP_CALL_VM
+    OP_CALL_VM,
+    OP_PRINT_ARG0
 };
 enum {
     TYPE_INT = 0,
@@ -103,9 +106,17 @@ typedef struct ASM_jump   ASM_jump;
 typedef union  VALUE      VALUE;
 typedef struct TVar       TVar;
 
+union VALUE {
+    int     i;
+    float   f;
+    char    *pchar;
+    void    *pvoid;
+    UCHAR   uchar;
+};
 struct ASM { // private struct
     UCHAR     *p;
     UCHAR     *code;
+    VALUE     arg [10]; // used functions get argument
     int       ip;
     ASM_label *label;
     ASM_jump  *jump;
@@ -119,14 +130,6 @@ struct ASM_jump { // private struct
     char      *name;
     int       pos;
     ASM_jump  *next;
-};
-
-union VALUE {
-    int     i;
-    float   f;
-    char    *pchar;
-    void    *pvoid;
-    UCHAR   uchar;
 };
 struct TVar {
     char    *name;
@@ -157,11 +160,13 @@ extern void   asm_label       (ASM *a, char *name);
 extern void emit_push_int     (ASM *a, int i);
 extern void emit_push_float   (ASM *a, float value);
 extern void emit_push_var     (ASM *a, UCHAR index);
+extern void emit_push_arg     (ASM *a, UCHAR i);
 extern void emit_pop_var      (ASM *a, UCHAR i);
 extern void emit_pop_eax      (ASM *a);
 extern void emit_mul_int      (ASM *a);
 extern void emit_add_int      (ASM *a);
 extern void emit_print_eax    (ASM *a, UCHAR type);
+extern void emit_print_string (ASM *a, UCHAR size, const char *str);
 extern void emit_mov_eax_var  (ASM *a, UCHAR index);
 extern void emit_call         (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
 extern void emit_call_vm      (ASM *a, void *func, UCHAR arg_count);

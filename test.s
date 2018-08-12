@@ -3,8 +3,10 @@ int i, a = 10, b = 20, c = 3, d = 5, x;
 
   a * b + c * d; // display: 215
 
-  if (a == 10) {
-      a; // display value of a: 10
+  if (a < b && !i) { // true
+
+      "\nVariable a: " a; "\n";
+
   }
 
   info (1); // display variable list:

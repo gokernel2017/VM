@@ -1,7 +1,5 @@
 //-------------------------------------------------------------------
 //
-// Mini Language with LEXER:
-//
 // A Mini Language with less than 1000 Lines ... using VM
 //
 // TANKS TO:
@@ -14,10 +12,11 @@
 // IMPLEMENTATION ( lex(): using LEXER ):
 //   01: word int
 //   02: word if
-//   03: word function
+//   03: word function ... with arguments ...
 //   -----------------
-//   04: expression
-//   05: call C Native Functions
+//   04: Expression
+//   05: Call C Native Functions
+//   06: String Display Implementation
 //
 // COMPILE:
 //   make clean
@@ -32,26 +31,47 @@
 // BY: Francisco - gokernel@hotmail.com
 //
 //-------------------------------------------------------------------
-//
-
+// LINES: 944
 #include "src/vm.h"
 
+// define/enum:
+//
 #define LEXER_NAME_SIZE   255
 #define LEXER_TOKEN_SIZE  1024 * 4
 #define STR_ERRO_SIZE     1024
+
+enum {
+    // types:
+    TOK_INT = 255,
+    TOK_FLOAT,
+    TOK_IF,
+    TOK_FUNCTION,
+    //-----------------------
+    TOK_ID,
+    TOK_STRING,
+    TOK_NUMBER,
+    //-------------
+    TOK_PLUS_PLUS,    // ++
+    TOK_MINUS_MINUS,  // --
+    TOK_EQUAL_EQUAL,  // ==
+    TOK_NOT_EQUAL,    // !=
+    TOK_AND_AND,      // &&
+    TOK_PTR           // ->
+};
+enum { FUNC_TYPE_NATIVE_C = 0, FUNC_TYPE_COMPILED, FUNC_TYPE_VM };
 
 typedef struct {
     char  *text;
     char  name  [LEXER_NAME_SIZE];
     char  token [LEXER_TOKEN_SIZE];
-    //
-    int   pos; // text [ pos ]
+    int   pos;  // text [ pos ]
     int   line;
     int   tok;
 }LEXER;
-
-enum { FUNC_TYPE_NATIVE_C = 0, FUNC_TYPE_COMPILED, FUNC_TYPE_VM };
-
+typedef struct {
+    char  type[20]; // "int", "float", "data_struct"
+    char  name[20];
+}ARG;
 typedef struct TFunc TFunc;
 struct TFunc {
     char    *name;
@@ -75,26 +95,8 @@ static TFunc stdlib[]={
   { NULL,         NULL,   NULL,                   0,    0,    NULL }
 };
 
-enum {
-    // types:
-    TOK_INT = 255,
-    TOK_FLOAT,
-    TOK_IF,
-    TOK_FUNCTION,
-    //-----------------------
-    TOK_ID,
-    TOK_STRING,
-    TOK_NUMBER,
-    //-------------
-    TOK_PLUS_PLUS,    // ++
-    TOK_MINUS_MINUS,  // --
-    TOK_EQUAL_EQUAL,  // ==
-    TOK_NOT_EQUAL,    // !=
-    TOK_AND_AND,      // &&
-    TOK_PTR           // ->
-};
-
 static TFunc *Gfunc = NULL;  // store the user functions
+static ARG argument[20];
 ASM *asm_function;
 int erro, is_function, is_recursive, main_variable_type, var_type, argument_count;
 static char
@@ -105,7 +107,13 @@ static char
 static void word_int      (LEXER *l, ASM *a);
 static void word_if       (LEXER *l, ASM *a);
 static void word_function (LEXER *l, ASM *a);
+//--------------  Expression:  --------------
 static int  expr0         (LEXER *l, ASM *a);
+static void expr1         (LEXER *l, ASM *a);
+static void expr2         (LEXER *l, ASM *a);
+static void expr3         (LEXER *l, ASM *a);
+static void atom          (LEXER *l, ASM *a);
+//-------------------------------------------
 static int  see           (LEXER *l);
 
 static char strErro[STR_ERRO_SIZE];
@@ -124,7 +132,6 @@ void ErroReset (void) {
     erro = 0;
     strErro[0] = 0;
 }
-
 //
 // return tok number
 //
@@ -225,7 +232,6 @@ top:
         }
     }//: if (c == '/')
 
-
     //---------------------------------------------------------------
     //################# ! C suported character ...  #################
     //---------------------------------------------------------------
@@ -238,6 +244,13 @@ top:
         l->tok = TOK_EQUAL_EQUAL;
         return TOK_EQUAL_EQUAL;
     }
+    if (c=='&' && next == '&') { // ==
+        *p++ = '&'; *p++ = '&'; *p = 0;
+        l->pos += 2;
+        l->tok = TOK_AND_AND;
+        return TOK_AND_AND;
+    }
+
 
     *p++ = c;
     *p = 0;
@@ -285,34 +298,37 @@ int VarFind (char *name) {
     return -1;
 }
 TFunc *FuncFind (char *name) {
-    TFunc *lib;
-    TFunc *func;
-
     // array:
-    lib = stdlib;
+    TFunc *lib = stdlib;
     while (lib->name) {
         if ((lib->name[0]==name[0]) && !strcmp(lib->name, name))
       return lib;
         lib++;
     }
-
     // linked list:
-    func = Gfunc;
-    while(func){
+    TFunc *func = Gfunc;
+    while (func) {
         if ((func->name[0]==name[0]) && !strcmp(func->name, name))
       return func;
         func = func->next;
     }
-
     return NULL;
 }
-
+int ArgumentFind (char *name) {
+    int i;
+    for(i=0;i<argument_count;i++)
+        if (!strcmp(argument[i].name, name)) return i;
+    return -1;
+}
 static int see (LEXER *l) {
     char *s = l->text+l->pos;
     while (*s) {
         if (*s=='\n' || *s==' ' || *s==9 || *s==13) {
             s++;
-        } else return *s;
+        } else {
+            if (s[0]=='=' && s[1]=='=') return TOK_EQUAL_EQUAL;
+            return *s;
+        }
     }
     return 0;
 }
@@ -343,12 +359,82 @@ char * FileOpen (const char *FileName) {
 
     return NULL;
 }
+static int expr0 (LEXER *l, ASM *a) {
+    if (l->tok == TOK_ID) {
+        int i;
+        if ((i=VarFind(l->token)) != -1) {
+            if (see(l)=='=') {
+                char token[255];
+                sprintf (token, "%s", l->token);
+                int pos = l->pos; // save
+                int tok = l->tok;
+                lex(l);
+                if (l->tok == '=') {
+                    lex(l);
+                    expr0(l,a);
+                    // Copia o TOPO DA PILHA ( sp ) para a variavel ... e decrementa sp++.
+                    emit_pop_var (a,i);
+                    return i;
+                } else {
+                    sprintf (l->token, "%s", token);
+                    l->pos = pos; // restore
+                    l->tok = tok;
+                }
+            }//: if (see(l)=='=')
+        }//: if ((i=VarFind(l->token)) != -1)
+    }
+    expr1(l,a);
+    return -1;
+}
+static void expr1 (LEXER *l, ASM *a) { // '+' '-' : ADDITION | SUBTRACTION
+    int op;
+    expr2(l,a);
+    while ((op=l->tok) == '+' || op == '-') {
+        lex(l);
+        expr2(l,a);
+        if (main_variable_type==TYPE_FLOAT) {
+//            if (op=='+') emit_add_float (a);
+        } else { // INT
+            if (op=='+') emit_add_int (a);
+        }
 
-static void atom (LEXER *l, ASM *a) {
+    }
+}
+static void expr2 (LEXER *l, ASM *a) { // '*' '/' : MULTIPLICATION | DIVISION
+    int op;
+    expr3(l,a);
+    while ((op=l->tok) == '*' || op == '/') {
+        lex(l);
+        expr3(l,a);
+        if (main_variable_type==TYPE_FLOAT) {
+//            if (op=='*') emit_mul_float (a);
+        } else { // INT
+            if (op=='*') emit_mul_int (a);
+        }
+    }
+}
+static void expr3 (LEXER *l, ASM *a) { // '('
+    if (l->tok=='(') {
+        lex(l); expr0(l,a);
+        if (l->tok != ')') {
+            Erro ("ERRO )\n");
+        }
+        lex(l);
+    }
+    else atom(l,a); // atom:
+}
+static void atom (LEXER *l, ASM *a) { // expres
     if (l->tok==TOK_ID) {
         int i;
 
-        if ((i=VarFind(l->token))!=-1) {
+        // push a argument function:
+        //
+        if (is_function && (i=ArgumentFind(l->token))!=-1) {
+//printf ("pust argument (%s)=%d arg: %d\n", token, line, i);
+            emit_push_arg (a, i);
+            lex(l);
+        }
+        else if ((i=VarFind(l->token))!=-1) {
             var_type = Gvar[i].type;
 
             emit_push_var (a,i);
@@ -373,69 +459,7 @@ static void atom (LEXER *l, ASM *a) {
         lex(l);
     }
     else { Erro("Expression"); printf ("LINE: %d token(%s)\n", l->line, l->token); }
-}
-static void expr3 (LEXER *l, ASM *a) { // '('
-    if (l->tok=='(') {
-        lex(l); expr0(l,a);
-        if (l->tok != ')') {
-            Erro ("ERRO )\n");
-        }
-        lex(l);
-    }
-    else atom(l,a); // atom:
-}
-static void expr2 (LEXER *l, ASM *a) { // '*' '/' : MULTIPLICATION | DIVISION
-    int op;
-    expr3(l,a);
-    while ((op=l->tok) == '*' || op == '/') {
-        lex(l);
-        expr3(l,a);
-        if (main_variable_type==TYPE_FLOAT) {
-//            if (op=='*') emit_mul_float (a);
-        } else { // LONG
-            if (op=='*') emit_mul_int (a);
-        }
-    }
-}
-static void expr1 (LEXER *l, ASM *a) { // '+' '-' : ADDITION | SUBTRACTION
-    int op;
-    expr2(l,a);
-    while ((op=l->tok) == '+' || op == '-') {
-        lex(l);
-        expr2(l,a);
-        if (main_variable_type==TYPE_FLOAT) {
-//            if (op=='+') emit_add_float (a);
-        } else { // INT
-            if (op=='+') emit_add_int (a);
-        }
-
-    }
-}
-static int expr0 (LEXER *l, ASM *a) {
-    if (l->tok == TOK_ID) {
-        int i;
-        if ((i=VarFind(l->token)) != -1) {
-            char token[255];
-            sprintf (token, "%s", l->token);
-            int pos = l->pos; // save
-            int tok = l->tok;
-            lex(l);
-            if (l->tok == '=') {
-                lex(l);
-                expr0(l,a);
-                // Copia o TOPO DA PILHA ( sp ) para a variavel ... e decrementa sp++.
-                emit_pop_var (a,i);
-                return i;
-            } else {
-                sprintf (l->token, "%s", token);
-                l->pos = pos; // restore
-                l->tok = tok;
-            }
-        }
-    }
-    expr1(l,a);
-    return -1;
-}
+}//: atom ()
 
 //
 // function_name (a, b, c + d);
@@ -466,21 +490,22 @@ void execute_call (LEXER *l, ASM *a, TFunc *func) {
         if (func->proto[0] == 'f') return_type = TYPE_FLOAT;
     }
     if (func->type == FUNC_TYPE_VM) {
-//printf ("VM funcao(%s)\n", func->name);
-//        ASM *local = fi->code;
-//        local->ip = 0;
         //
         // here: fi->code ==  ASM*
         //
         emit_call_vm (a, (ASM*)(func->code), (UCHAR)count);
     } else {
-        //asm_call (a, fi->code, (UCHAR)count);
         emit_call (a, (void*)func->code, (UCHAR)count, return_type);
     }
 }
 
 void expression (LEXER *l, ASM *a) {
     char buf[255];
+
+    if (l->tok == TOK_STRING) {
+        emit_print_string (a, (UCHAR)strlen(l->token), l->token);
+  return;
+    }
 
     if (l->tok == TOK_ID || l->tok == TOK_NUMBER) {
         int i;
@@ -513,11 +538,8 @@ void expression (LEXER *l, ASM *a) {
                 //   var = function_name (...);
                 //
                 if ((fi = FuncFind(l->token)) != NULL) {
-
                     execute_call (l, a, fi);
-
-                    emit_mov_eax_var(a,i); // copy return function to var:
-
+                    emit_mov_eax_var (a,i); // copy return function to var:
                     return;
                 } else {
                     // .. !restore token ...
@@ -542,9 +564,11 @@ void expression (LEXER *l, ASM *a) {
     }
 }
 
-
 static int stmt (LEXER *l, ASM *a) {
-    switch (lex(l)) {
+
+    lex (l);
+
+    switch (l->tok) {
     case '{':
         while (!erro && l->tok && l->tok != '}') stmt(l,a);
         //----------------------------------------------------
@@ -570,10 +594,8 @@ static void word_int (LEXER *l, ASM *a) {
 
             strcpy (name, l->token); // save
 
-            lex(l);
-            if (l->tok == '=') {
-                lex (l);
-                if (l->tok == TOK_NUMBER)
+            if (lex(l) == '=') {
+                if (lex(l) == TOK_NUMBER)
                     value = atoi (l->token);
             }
             if (is_function) {
@@ -608,20 +630,17 @@ static void word_if (LEXER *l, ASM *a) { // if (a > b && c < d && i == 10 && k) 
 
         if (erro) return;
 
-/*
-        if (tok == ')' || tok == TOK_AND_AND) asm_pop_eax(a); // 58     pop   %eax
-        else                                  g (a,0x5a); // 5a     pop   %edx
-*/
         tok = l->tok;
         switch (tok) {
-/*
         case ')': // if (a) { ... }
         case TOK_AND_AND:
-            g2(a,0x85,0xc0); // 85 c0    test   %eax,%eax
-            if (is_negative == 0) asm_je  (a, array[if_count]);
-            else                  asm_jne (a, array[if_count]);
+            emit_push_int (a, 0); // ! to compare if zero
+            emit_cmp_int (a);
+            if (is_negative == 0)
+                emit_jump_jeq (a,array[if_count]);
+            else
+                emit_jump_jne (a,array[if_count]);
             break;
-*/
 
         case '>':             // if (a > b)  { jle }
         case '<':             // if (a < b)  { jge }
@@ -635,14 +654,6 @@ static void word_if (LEXER *l, ASM *a) { // if (a > b && c < d && i == 10 && k) 
             if (tok==TOK_EQUAL_EQUAL) emit_jump_jne (a,array[if_count]); // ==
             if (tok==TOK_NOT_EQUAL) emit_jump_jeq (a,array[if_count]); // !=
             break;
-/*
-        // if (a != b) { je }
-        case TOK_NOT_EQUAL: // !=
-            tok=lex(); expr0(a); asm_pop_eax(a); // 58     : pop   %eax
-            asm_cmp_eax_edx(a);                 // 39 c2  : cmp   %eax,%edx
-            asm_je (a,array[if_count]);
-            break;
-*/
         }//:switch(t->tok)
         if (l->tok==')') break;
     }
@@ -654,7 +665,7 @@ static void word_if (LEXER *l, ASM *a) { // if (a > b && c < d && i == 10 && k) 
 }
 static void word_function (LEXER *l, ASM *a) {
     struct TFunc *func;
-    char name[255], proto[255] = { '0', 0 };
+    char name[255], proto[255] = { '0', 0, 0, 0, 0, 0, 0, 0, 0 };
     int i;
 
     lex(l);
@@ -696,33 +707,30 @@ static void word_function (LEXER *l, ASM *a) {
     while (lex(l)) {
 
         if (l->tok==TOK_INT) {
-//            argument[argument_count].type[0] = TYPE_INT; // 0
+            argument[argument_count].type[0] = TYPE_INT; // 0
             //strcpy (argument[argument_count].type, "int");
-            lex(l);
-            if (l->tok==TOK_ID) {
-//                strcpy (argument[argument_count].name, l->token);
+            if (lex(l)==TOK_ID) {
+                strcpy (argument[argument_count].name, l->token);
                 strcat (proto, "i");
                 argument_count++;
             }
         }
-/*
-        else if (tok==TOK_FLOAT) {
+        else if (l->tok==TOK_FLOAT) {
             argument[argument_count].type[0] = TYPE_FLOAT; // 1
             //strcpy (argument[argument_count].type, "int");
-            tok=lex();
-            if (tok==TOK_ID) {
-                strcpy (argument[argument_count].name, token);
+            if (lex(l)==TOK_ID) {
+                strcpy (argument[argument_count].name, l->token);
                 strcat (proto, "f");
                 argument_count++;
             }
         }
-        else if (tok==TOK_ID) {
+        else if (l->tok==TOK_ID) {
             argument[argument_count].type[0] = 0;
-            strcpy (argument[argument_count].name, token);
+            strcpy (argument[argument_count].name, l->token);
             strcat (proto, "i");
             argument_count++;
         }
-*/
+
         if (l->tok=='{') break;
     }
     if (argument_count==0) {
@@ -745,7 +753,6 @@ static void word_function (LEXER *l, ASM *a) {
 
     if (erro) return;
 
-//#ifdef USE_VM
     ASM *vm;
     int len = asm_get_len (asm_function);
 
@@ -789,7 +796,6 @@ static void word_function (LEXER *l, ASM *a) {
         is_function = is_recursive = argument_count = *func_name = 0;
         return;
     }
-//#endif
 
     // add on top:
     func->next = Gfunc;
@@ -862,7 +868,7 @@ int lib_add (int a, int b) {
     return a + b;
 }
 void lib_help (void) {
-    printf ("Function: HELP ... testing ...\n");
+    printf ("\nFunction: HELP ... testing ...\n");
 }
 
 
@@ -939,7 +945,6 @@ int main (int argc, char **argv) {
             else printf ("\n%s\n", ErroGet());
         }
     }
-
 
     printf ("Exiting With Sucess: \n");
 

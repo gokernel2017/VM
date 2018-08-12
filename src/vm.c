@@ -77,6 +77,13 @@ case OP_PUSH_VAR: {
     }
     } continue;
 
+case OP_PUSH_ARG: {
+    UCHAR i = (UCHAR)a->code[a->ip++];
+    sp++;
+    sp[0] = a->arg[i];
+//printf ("PUSH ARGUMENT(%d) = %ld\n", i, sp->l);
+    } continue;
+
 
 case OP_POP_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
@@ -102,6 +109,23 @@ case OP_PRINT_EAX: {
     case TYPE_FLOAT: printf ("%f\n", eax.f); break;
     }
     } continue;
+
+case OP_PRINT_STRING: {
+    UCHAR i = (UCHAR)(a->code[a->ip++]);
+    while (i--){
+        if (a->code[a->ip]=='\\' && a->code[a->ip+1]=='n') {
+            printf("%c", 10); // new line
+            i--;
+            a->ip++;
+        } else printf ("%c", a->code[a->ip]);
+
+        a->ip++;
+    }
+    } continue;
+
+case OP_PRINT_ARG0:
+    printf ("VM Function arg[0]: %d\n", a->arg[0].i);
+    break;
 
 case OP_MOV_EAX_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
@@ -129,28 +153,6 @@ case OP_CMP_INT:
 case OP_JUMP_JMP:
     a->ip = *(unsigned short*)(a->code+a->ip);
     continue;
-
-/*
-op_jeq: if (!f)   { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-op_jne: if (f)    { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-op_jge: if (f>=0) { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-op_jle: if (f<=0) { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-op_jg:  if (f>0)  { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-op_jl:  if (f<0)  { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-*/
-
-/*
-			 case cmpeq_i:
-				 sp[-1]=sp[-1] == sp[0];
-				 sp--;
-				 break;
-			 case cmpne_i:
-				 sp[-1]=sp[-1] != sp[0];
-				 sp--;
-				 break;
-
-op_jeq: if (!f)   { goto *(ip = code + ip->value.l)->jmp; } NEXT;
-*/
 
 case OP_JUMP_JEQ: // !=
     if (!flag)
@@ -246,7 +248,6 @@ case OP_CALL_VM: {
     a->ip += sizeof(void*);
     UCHAR arg_count = (UCHAR)(a->code[a->ip++]); //printf ("CALL ARG_COUNT = %d\n", arg_count);
 
-/*
     switch(arg_count){
     case 1: local->arg[0] = sp[0]; sp--; break;
     case 2:
@@ -265,7 +266,7 @@ case OP_CALL_VM: {
         local->arg[0] = sp[0]; sp--;
         break;
     }//: switch(arg_count)
-*/
+
 //printf ("call_vm arg_count: %d\n", arg_count);
 
     if (local == a) {
@@ -411,6 +412,11 @@ void emit_push_var (ASM *a, UCHAR index) {
     *a->p++ = index;
 }
 
+void emit_push_arg (ASM *a, UCHAR i) {
+    *a->p++ = OP_PUSH_ARG;
+    *a->p++ = i;
+}
+
 void emit_pop_var (ASM *a, UCHAR i) {
     *a->p++ = OP_POP_VAR;
     *a->p++ = i;
@@ -432,6 +438,14 @@ void emit_add_float (ASM *a) {
 void emit_print_eax (ASM *a, UCHAR type) {
     *a->p++ = OP_PRINT_EAX;
     *a->p++ = type;
+}
+void emit_print_string (ASM *a, UCHAR size, const char *str) {
+//printf("PRINTS POS: %d\n", (vm->p-vm->code));
+    *a->p++ = OP_PRINT_STRING;
+    *a->p++ = size;
+    while (*str) {
+        *a->p++ = *str++;
+    }
 }
 
 void emit_halt (ASM *a) {
