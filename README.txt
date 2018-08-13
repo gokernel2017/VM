@@ -1,5 +1,5 @@
 
- VM with a Mini Language(c-like):
+ VM with a Mini Language:
 
  COMPILE:
    make clean

@@ -1,4 +1,5 @@
 
+
 int i, a = 10, b = 20, c = 3, d = 5, x;
 
 function add_a (arg1, arg2) {
@@ -28,6 +29,7 @@ function add_b (arg1, arg2) {
   "Value a: " a;
   "Value b: " b;
   "\n"
+
 
   //-------------------------
   // CALL THE FUNCTIONS

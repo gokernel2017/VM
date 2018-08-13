@@ -10,13 +10,14 @@
 // ----------------------------------------------
 //
 // IMPLEMENTATION ( lex(): using LEXER ):
-//   01: word int
-//   02: word if
-//   03: word function ... with arguments ...
+//   * word int
+//   * word if
+//   * word function ... with arguments ...
+//   * word_include - USAGE: include "file.s"
 //   -----------------
-//   04: Expression
-//   05: Call C Native Functions
-//   06: String Display Implementation
+//   * Expression
+//   * Call C Native Functions
+//   * String Display Implementation
 //
 // COMPILE:
 //   make clean
@@ -39,6 +40,7 @@
 #define LEXER_NAME_SIZE   255
 #define LEXER_TOKEN_SIZE  1024 * 4
 #define STR_ERRO_SIZE     1024
+#define INCLUDE_FILE_MAX  10
 
 enum {
     // types:
@@ -46,6 +48,7 @@ enum {
     TOK_FLOAT,
     TOK_IF,
     TOK_FUNCTION,
+    TOK_INCLUDE,
     //-----------------------
     TOK_ID,
     TOK_STRING,
@@ -68,6 +71,12 @@ typedef struct {
     int   line;
     int   tok;
 }LEXER;
+struct INCLUDE { // used in: word_include()
+    ASM     *vm;
+    LEXER   lexer;
+    char    *text;
+    char    *name;
+}inc [INCLUDE_FILE_MAX];
 typedef struct {
     char  type[20]; // "int", "float", "data_struct"
     char  name[20];
@@ -107,6 +116,7 @@ static char
 static void word_int      (LEXER *l, ASM *a);
 static void word_if       (LEXER *l, ASM *a);
 static void word_function (LEXER *l, ASM *a);
+static void word_include  (LEXER *l, ASM *a);
 //--------------  Expression:  --------------
 static int  expr0         (LEXER *l, ASM *a);
 static void expr1         (LEXER *l, ASM *a);
@@ -114,6 +124,7 @@ static void expr2         (LEXER *l, ASM *a);
 static void expr3         (LEXER *l, ASM *a);
 static void atom          (LEXER *l, ASM *a);
 //-------------------------------------------
+int Parse (LEXER *l, ASM *a, char *text, char *name);
 static int  see           (LEXER *l);
 
 static char strErro[STR_ERRO_SIZE];
@@ -187,6 +198,7 @@ top:
         if (!strcmp(l->token, "float"))     { l->tok = TOK_FLOAT;     return TOK_FLOAT; }
         if (!strcmp(l->token, "if"))        { l->tok = TOK_IF;        return TOK_IF; }
         if (!strcmp(l->token, "function"))  { l->tok = TOK_FUNCTION;  return TOK_FUNCTION; }
+        if (!strcmp(l->token, "include"))   { l->tok = TOK_INCLUDE;   return TOK_INCLUDE; }
 
         l->tok = TOK_ID;
         return TOK_ID;
@@ -578,6 +590,7 @@ static int stmt (LEXER *l, ASM *a) {
     case TOK_INT:       word_int      (l,a); return 1;
     case TOK_IF:        word_if       (l,a); return 1;
     case TOK_FUNCTION:  word_function (l,a); return 1;
+    case TOK_INCLUDE:   word_include  (l,a); return 1;
     default:            expression    (l,a); return 1;
     case ';':
     case '}':
@@ -665,7 +678,7 @@ static void word_if (LEXER *l, ASM *a) { // if (a > b && c < d && i == 10 && k) 
 }
 static void word_function (LEXER *l, ASM *a) {
     struct TFunc *func;
-    char name[255], proto[255] = { '0', 0, 0, 0, 0, 0, 0, 0, 0 };
+    char name[255], proto[255] = { '0', 0, 0, 0, 0, 0, 0, 0 };
     int i;
 
     lex(l);
@@ -725,7 +738,7 @@ static void word_function (LEXER *l, ASM *a) {
             }
         }
         else if (l->tok==TOK_ID) {
-            argument[argument_count].type[0] = 0;
+            argument[argument_count].type[0] = TYPE_INT;
             strcpy (argument[argument_count].name, l->token);
             strcat (proto, "i");
             argument_count++;
@@ -805,6 +818,37 @@ static void word_function (LEXER *l, ASM *a) {
 
 }//: word_function ()
 
+static void word_include (LEXER *l, ASM *a) {
+    static int count = 0;;
+
+    lex (l); // get string: FileName
+
+    if (count >= INCLUDE_FILE_MAX - 1) {
+        printf ("INCLUDE USED(%s) ... Please Wait(%s) ... Files Used: %d\n", inc[count].name, l->token, count);
+        return;
+    }
+
+    count++;
+    inc[count].name = strdup(l->token);
+
+    if (l->tok == TOK_STRING && (inc[count].text = FileOpen(inc[count].name)) != NULL) {
+
+        if ((inc[count].vm = asm_new (ASM_DEFAULT_SIZE)) != NULL) {
+
+            if (Parse (&inc[count].lexer, inc[count].vm, inc[count].text, inc[count].name) == 0) {
+                vm_run (inc[count].vm);
+            }
+
+            asm_reset (inc[count].vm);
+            free (inc[count].vm->code);
+            free (inc[count].vm);
+        }
+        free (inc[count].text);
+    }
+
+    free (inc[count].name);
+    count--;
+}
 void lib_info (int arg) {
     switch (arg) {
     case 1: {
