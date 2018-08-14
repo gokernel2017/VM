@@ -1,6 +1,6 @@
 //-------------------------------------------------------------------
 //
-// A Mini Language using VM.
+// A Mini Language with less than 1000 Lines ... using VM
 //
 // TANKS TO:
 // ----------------------------------------------
@@ -12,8 +12,6 @@
 // IMPLEMENTATION ( lex(): using LEXER ):
 //   * word int
 //   * word if
-//   * word for ... forever implementation ...: for (;;) { ... }
-//   * word break
 //   * word function ... with arguments ...
 //   * word_include - USAGE: include "file.s"
 //   -----------------
@@ -49,8 +47,6 @@ enum {
     TOK_INT = 255,
     TOK_FLOAT,
     TOK_IF,
-    TOK_FOR,
-    TOK_BREAK,
     TOK_FUNCTION,
     TOK_INCLUDE,
     //-----------------------
@@ -111,18 +107,14 @@ static TFunc stdlib[]={
 static TFunc *Gfunc = NULL;  // store the user functions
 static ARG argument[20];
 ASM *asm_function;
-static int loop_level;
 int erro, is_function, is_recursive, main_variable_type, var_type, argument_count;
 static char
-    func_name [100],
-    array_break[20][20]   // used to word break
+    func_name [100]
     ;
 
 // prototypes:
 static void word_int      (LEXER *l, ASM *a);
 static void word_if       (LEXER *l, ASM *a);
-static void word_for      (LEXER *l, ASM *a);
-static void word_break    (LEXER *l, ASM *a);
 static void word_function (LEXER *l, ASM *a);
 static void word_include  (LEXER *l, ASM *a);
 //--------------  Expression:  --------------
@@ -205,8 +197,6 @@ top:
         if (!strcmp(l->token, "int"))       { l->tok = TOK_INT;       return TOK_INT; }
         if (!strcmp(l->token, "float"))     { l->tok = TOK_FLOAT;     return TOK_FLOAT; }
         if (!strcmp(l->token, "if"))        { l->tok = TOK_IF;        return TOK_IF; }
-        if (!strcmp(l->token, "for"))       { l->tok = TOK_FOR;       return TOK_FOR; }
-        if (!strcmp(l->token, "break"))     { l->tok = TOK_BREAK;     return TOK_BREAK; }
         if (!strcmp(l->token, "function"))  { l->tok = TOK_FUNCTION;  return TOK_FUNCTION; }
         if (!strcmp(l->token, "include"))   { l->tok = TOK_INCLUDE;   return TOK_INCLUDE; }
 
@@ -259,13 +249,6 @@ top:
     //---------------------------------------------------------------
     //
     next = l->text[ l->pos+1 ];
-
-    if (c=='+' && next == '+') { // ++
-        *p++ = '+'; *p++ = '+'; *p = 0;
-        l->pos += 2;
-        l->tok = TOK_PLUS_PLUS;
-        return TOK_PLUS_PLUS;
-    }
 
     if (c=='=' && next == '=') { // ==
         *p++ = '='; *p++ = '='; *p = 0;
@@ -356,7 +339,6 @@ static int see (LEXER *l) {
             s++;
         } else {
             if (s[0]=='=' && s[1]=='=') return TOK_EQUAL_EQUAL;
-            if (s[0]=='+' && s[1]=='+') return TOK_PLUS_PLUS;
             return *s;
         }
     }
@@ -553,18 +535,10 @@ void expression (LEXER *l, ASM *a) {
         }
 
         if ((i = VarFind(l->token)) != -1) {
-            int next = see(l);
 
             main_variable_type = var_type = Gvar[i].type;
 
-            // increment var type int: a++;
-            //
-            if (next == TOK_PLUS_PLUS) {
-                lex(l);
-                emit_inc_var_int(a,(UCHAR)i);
-                return;
-            }
-            if (next == '=') {
+            if (see(l) == '=') {
                 char token[255];
                 sprintf (token, "%s", l->token);
                 int pos = l->pos; // save
@@ -615,8 +589,6 @@ static int stmt (LEXER *l, ASM *a) {
         return 1;
     case TOK_INT:       word_int      (l,a); return 1;
     case TOK_IF:        word_if       (l,a); return 1;
-    case TOK_FOR:       word_for      (l,a); return 1;
-    case TOK_BREAK:     word_break    (l,a); return 1;
     case TOK_FUNCTION:  word_function (l,a); return 1;
     case TOK_INCLUDE:   word_include  (l,a); return 1;
     default:            expression    (l,a); return 1;
@@ -704,62 +676,6 @@ static void word_if (LEXER *l, ASM *a) { // if (a > b && c < d && i == 10 && k) 
     asm_label (a, array[if_count]);
     if_count--;
 }
-//
-// for (;;) { ... }
-// for (i = 0; i < 100; i++) { ... }
-//
-static void word_for (LEXER *l, ASM *a) {
-    //####### to "push/pop"
-    //
-    static char array[20][20];
-    static int for_count_total = 0;
-    static int for_count = 0;
-    //
-
-    if (lex(l) != '(') {
-        Erro ("ERRO FOR, dont found char: '('");
-        return;
-    }
-    lex (l);
-
-    // for (;;) { ... }
-    //
-    if (l->tok == ';' && lex(l) == ';') {
-        if (lex(l) != ')') {
-            Erro ("ERRO FOR, dont found char: ')'");
-            return;
-        }
-        if (see(l) != '{') { // ! check block '{'
-            Erro ("ERRO FOR, dont found char: '{'");
-            return;
-        }
-
-loop_level++;
-
-        for_count++;
-        for_count_total++;
-        sprintf (array[for_count], "_FOR_%d", for_count_total);
-        sprintf (array_break[loop_level], "_FOR_END%d", for_count_total); // used for break
-        asm_label(a, array[for_count]);
-
-        stmt (l,a); //<<<<<<<<<<  block  >>>>>>>>>>
-
-        emit_jump_jmp (a, array[for_count]);
-
-        asm_label (a, array_break[loop_level]); // used to break
-        for_count--;
-
-loop_level--;
-    }
-
-}
-static void word_break (LEXER *l, ASM *a) {
-    if (loop_level) {
-        emit_jump_jmp (a, array_break[loop_level]);
-    }
-    else Erro ("word 'break' need a loop");
-}
-
 static void word_function (LEXER *l, ASM *a) {
     struct TFunc *func;
     char name[255], proto[255] = { '0', 0, 0, 0, 0, 0, 0, 0 };
@@ -907,13 +823,12 @@ static void word_include (LEXER *l, ASM *a) {
 
     lex (l); // get string: FileName
 
-    if (count >= INCLUDE_FILE_MAX - 2) {
+    if (count >= INCLUDE_FILE_MAX - 1) {
         printf ("INCLUDE USED(%s) ... Please Wait(%s) ... Files Used: %d\n", inc[count].name, l->token, count);
         return;
     }
 
-    count++; // <<<<<<<<<<  ! PUSH  >>>>>>>>>>
-
+    count++;
     inc[count].name = strdup(l->token);
 
     if (l->tok == TOK_STRING && (inc[count].text = FileOpen(inc[count].name)) != NULL) {
@@ -932,8 +847,7 @@ static void word_include (LEXER *l, ASM *a) {
     }
 
     free (inc[count].name);
-
-    count--; // <<<<<<<<<<  ! POP  >>>>>>>>>>
+    count--;
 }
 void lib_info (int arg) {
     switch (arg) {

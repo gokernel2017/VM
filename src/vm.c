@@ -87,7 +87,7 @@ case OP_PUSH_ARG: {
 
 case OP_POP_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
-    Gvar[i].value = sp[0]; break;
+    Gvar[i].value = sp[0];
 /*
     switch (Gvar[i].type) {
     case TYPE_INT:  Gvar[i].value.i = sp->i; break;
@@ -131,6 +131,13 @@ case OP_MOV_EAX_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
     Gvar[i].value = eax;
     } continue;
+
+case OP_INC_VAR_INT: {
+    UCHAR index = (UCHAR)(a->code[a->ip++]);
+//    if (Gvar[index].type==TYPE_INT)
+        Gvar[index].value.i++;
+    }
+    continue;
 
 case OP_MUL_INT: sp[-1].i *= sp[0].i; sp--; continue;
 case OP_DIV_INT: sp[-1].i /= sp[0].i; sp--; continue;
@@ -472,6 +479,11 @@ void emit_mov_eax_var (ASM *a, UCHAR index) {
     *a->p++ = index;
 }
 
+void emit_inc_var_int (ASM *a, UCHAR index) {
+    *a->p++ = OP_INC_VAR_INT;
+    *a->p++ = index;
+}
+
 UINT asm_get_len (ASM *a) {
     return (a->p - a->code);
 }
@@ -479,7 +491,25 @@ UINT asm_get_len (ASM *a) {
 void emit_cmp_int (ASM *a) {
     *a->p++ = OP_CMP_INT;
 }
+void emit_jump_jmp (ASM *a, char *name) {
+    ASM_jump *jump;
 
+    if (name && (jump = (ASM_jump*)malloc (sizeof(ASM_jump))) != NULL) {
+
+        *a->p++ = OP_JUMP_JMP;
+
+        jump->name = strdup (name);
+        jump->pos  = (a->p - a->code); // the index
+
+        // add on top:
+        jump->next = a->jump;
+        a->jump = jump;
+
+        // to change ...
+        *(unsigned short*)a->p = (jump->pos+2); // the index
+        a->p += sizeof(unsigned short);
+    }
+}
 static void conditional_jump (ASM *vm, char *name, UCHAR type) {
     ASM_jump *jump;
 
@@ -499,7 +529,6 @@ static void conditional_jump (ASM *vm, char *name, UCHAR type) {
         vm->p += sizeof(unsigned short);
     }
 }
-
 void emit_jump_jge (ASM *a, char *name) {
     conditional_jump (a, name, OP_JUMP_JGE);
 }

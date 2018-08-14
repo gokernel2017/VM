@@ -77,6 +77,7 @@ enum {
     OP_PRINT_STRING,
 
     OP_MOV_EAX_VAR,
+    OP_INC_VAR_INT, // increment variable int | a++;
 
     // Call a Native C Function ... use the stack to pass arguments,
     // the return value in ( ret.? )
@@ -168,11 +169,13 @@ extern void emit_add_int      (ASM *a);
 extern void emit_print_eax    (ASM *a, UCHAR type);
 extern void emit_print_string (ASM *a, UCHAR size, const char *str);
 extern void emit_mov_eax_var  (ASM *a, UCHAR index);
+extern void emit_inc_var_int  (ASM *a, UCHAR index);
 extern void emit_call         (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
 extern void emit_call_vm      (ASM *a, void *func, UCHAR arg_count);
 extern void emit_halt         (ASM *a);
 
 extern void emit_cmp_int      (ASM *a);
+extern void emit_jump_jmp     (ASM *a, char *name);
 extern void emit_jump_jge     (ASM *a, char *name);
 extern void emit_jump_jle     (ASM *a, char *name);
 extern void emit_jump_jeq     (ASM *a, char *name);

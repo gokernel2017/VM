@@ -2,6 +2,13 @@
 
 int i, a = 10, b = 20, c = 3, d = 5, x;
 
+/*
+function test (WIDGET o) {
+function test (OBJECT o) {
+  a = o->x;
+}
+*/
+
 function add_a (arg1, arg2) {
     "Function add_a:\n"
     "Variable a VALUE: " a;
