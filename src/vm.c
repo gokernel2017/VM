@@ -26,11 +26,56 @@
 
 #define STACK_SIZE    1024
 
-struct data {
-    int a;
-    int b;
-    int i;
+/*
+struct OPCODE opcode[] = {
+//-------------------------------------------
+//    op                name            size
+//-------------------------------------------
+    { OP_HALT,          "halt",         1 },
+    { OP_INC_VAR_INT,   "inc_var_int",  2 },
+    { OP_PUSH_INT,      "push_int",     5 },
+    { OP_PUSH_FLOAT,    "push_float",   5 },
+    { OP_PUSH_VAR,      "push_var",     2 },
+    { OP_PUSH_ARG,      "push_arg",     2 },
+    { OP_PUSH_LOCAL,    "push_local",   2 },
+    { OP_PUSH_STRING,   "push_string",  1 },
+    { OP_POP_VAR,       "pop_var",      2 },
+
+    { OP_POP_LOCAL,     "pop_local",    1 },
+    { OP_POP_EAX,       "pop_eax",      1 },
+    { OP_PRINT_EAX,     "print_eax",    2 },
+
+    { OP_MUL_INT,       "mul_int",      1 },
+    { OP_DIV_INT,       "div_int",      1 },
+    { OP_ADD_INT,       "add_int",      1 },
+    { OP_SUB_INT,       "sub_int",      1 },
+
+    { OP_MUL_FLOAT,     "mul_float",    1 },
+    { OP_DIV_FLOAT,     "div_float",    1 },
+    { OP_ADD_FLOAT,     "add_float",    1 },
+    { OP_SUB_FLOAT,     "sub_float",    1 },
+    //
+    { OP_CMP_INT,       "cmp_int",      1 },
+    { OP_JUMP_JMP,      "jump_jmp",     3 },
+    { OP_JUMP_JGE,      "jump_jge",     3 },
+    { OP_JUMP_JLE,      "jump_jle",     3 },
+    { OP_JUMP_JEQ,      "jump_jeq",     3 },
+    { OP_JUMP_JNE,      "jump_jne",     3 },
+    { OP_JUMP_JG,       "jump_jg",      3 },
+    { OP_JUMP_JL,       "jump_jl",      3 },
+    { OP_PRINT_STRING,  "print_string", -1 },
+    { OP_PRINT_LOCAL,   "print_local",  2 },
+    { OP_MOV_EAX_VAR,   "mov_eax_var",  2 },
+    { OP_INC_LOCAL_INT, "inc_local_int",2 },
+#if defined(__x86_64__)
+    { OP_CALL_VM,       "call_vm",      10},
+    { OP_CALL,          "call",         10}
+#else
+    { OP_CALL_VM,       "call_vm",      6 },
+    { OP_CALL,          "call",         6 }
+#endif
 };
+*/
 
 //-----------------------------------------------
 //-----------------  VARIABLES  -----------------
@@ -47,11 +92,14 @@ static int flag;
 void callvm (ASM *a) {
     vm_run(a);
 }
+
 //-------------------------------------------------------------------
 //--------------------------  START VM RUN  -------------------------
 //-------------------------------------------------------------------
 //
 void vm_run (ASM *a) {
+
+    a->ip = 0;
 
     for (;;) {
     switch (a->code[a->ip++]) {
@@ -85,15 +133,30 @@ case OP_PUSH_ARG: {
     } continue;
 
 
+case OP_PUSH_LOCAL: {
+    UCHAR i = (UCHAR)(a->code[a->ip++]);
+    if (a->local) {
+        sp++;
+        sp[0] = a->local[i].value;
+    }
+    } continue;
+
+case OP_PUSH_STRING: {
+    char *s = *(void**)(a->code+a->ip);
+    a->ip += sizeof(void*);
+    sp++;
+    sp->s = s;
+    } continue;
+
 case OP_POP_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
     Gvar[i].value = sp[0];
-/*
-    switch (Gvar[i].type) {
-    case TYPE_INT:  Gvar[i].value.i = sp->i; break;
-    case TYPE_FLOAT: Gvar[i].value.f = sp->f; break;
-    }
-*/
+    sp--;
+    } continue;
+
+case OP_POP_LOCAL: {
+    UCHAR i = (UCHAR)a->code[a->ip++];
+    a->local[i].value = sp[0];
     sp--;
     } continue;
 
@@ -111,7 +174,8 @@ case OP_PRINT_EAX: {
     } continue;
 
 case OP_PRINT_STRING: {
-    UCHAR i = (UCHAR)(a->code[a->ip++]);
+    UCHAR i = (UCHAR)(a->code[a->ip]);
+    a->ip++;
     while (i--){
         if (a->code[a->ip]=='\\' && a->code[a->ip+1]=='n') {
             printf("%c", 10); // new line
@@ -123,9 +187,13 @@ case OP_PRINT_STRING: {
     }
     } continue;
 
-case OP_PRINT_ARG0:
-    printf ("VM Function arg[0]: %d\n", a->arg[0].i);
-    break;
+case OP_PRINT_LOCAL: {
+//printf ("VM --- OP_PRINT_LOCAL\n");
+    UCHAR i = (UCHAR)(a->code[a->ip++]);
+    if (a->local && i < a->local_count) {
+        printf ("VM VAR LOCAL(%d)(%s) = %d\n", i, a->local[i].name, a->local[i].value.i);
+    }
+    } continue;
 
 case OP_MOV_EAX_VAR: {
     UCHAR i = (UCHAR)a->code[a->ip++];
@@ -134,8 +202,13 @@ case OP_MOV_EAX_VAR: {
 
 case OP_INC_VAR_INT: {
     UCHAR index = (UCHAR)(a->code[a->ip++]);
-//    if (Gvar[index].type==TYPE_INT)
         Gvar[index].value.i++;
+    }
+    continue;
+
+case OP_INC_LOCAL_INT: {
+    UCHAR index = (UCHAR)(a->code[a->ip++]);
+        a->local[index].value.i++;
     }
     continue;
 
@@ -203,78 +276,35 @@ case OP_JUMP_JL:
         a->ip += sizeof(unsigned short);
     continue;
 
-//
-// call a C Function
-//
-case OP_CALL:
-    {
-    int (*func)() = *(void**)(a->code+a->ip);
-    float (*func_float)() = *(void**)(a->code+a->ip);
-    a->ip += sizeof(void*);
-    UCHAR arg_count = (UCHAR)(a->code[a->ip++]);
-    UCHAR return_type = (UCHAR)(a->code[a->ip++]);
-
-    switch (arg_count) {
-    case 0: // no argument
-        if (return_type == TYPE_NO_RETURN) // 0 | no return
-            func ();
-        else if (return_type == TYPE_FLOAT)
-            eax.f = func_float ();
-        else
-            eax.i = func ();
-        break; // no argument
-    case 1: // 1 argument
-        if (return_type == TYPE_NO_RETURN) // 0 | no return
-            func (sp[0]);
-        else if (return_type == TYPE_FLOAT)
-            eax.f = func_float (sp[0]);
-        else
-            eax.i = func (sp[0]);
-        sp--;
-        break; // 1 argument
-    case 2: // 2 arguents
-        if (return_type == TYPE_NO_RETURN) // 0 | no return
-            func (sp[-1], sp[0]);
-        else if (return_type == TYPE_FLOAT)
-            eax.f = func_float (sp[-1], sp[0]);
-        else
-            eax.i = func (sp[-1], sp[0]);
-        sp -= 2;
-        break; // 2 arguments
-
-    }//: switch (arg_count)
-
-    } continue; //: case OP_CALL:
-
-
-
 // call a VM Function
 //
 case OP_CALL_VM: {
     ASM *local = *(void**)(a->code+a->ip);
     a->ip += sizeof(void*);
     UCHAR arg_count = (UCHAR)(a->code[a->ip++]); //printf ("CALL ARG_COUNT = %d\n", arg_count);
+    UCHAR return_type = (UCHAR)(a->code[a->ip++]);
 
     switch(arg_count){
     case 1: local->arg[0] = sp[0]; sp--; break;
     case 2:
-        local->arg[1] = sp[0]; sp--;
-        local->arg[0] = sp[0]; sp--;
+        local->arg[0] = sp[-1];
+        local->arg[1] = sp[0];
+        sp -= 2;
         break;
     case 3:
-        local->arg[2] = sp[0]; sp--;
-        local->arg[1] = sp[0]; sp--;
-        local->arg[0] = sp[0]; sp--;
+        local->arg[0] = sp[-2];
+        local->arg[1] = sp[-1];
+        local->arg[2] = sp[0];
+        sp -= 3;
         break;
     case 4:
-        local->arg[3] = sp[0]; sp--;
-        local->arg[2] = sp[0]; sp--;
-        local->arg[1] = sp[0]; sp--;
-        local->arg[0] = sp[0]; sp--;
+        local->arg[0] = sp[-3];
+        local->arg[1] = sp[-2];
+        local->arg[2] = sp[-1];
+        local->arg[3] = sp[0];
+        sp -= 4;
         break;
     }//: switch(arg_count)
-
-//printf ("call_vm arg_count: %d\n", arg_count);
 
     if (local == a) {
 
@@ -296,16 +326,79 @@ case OP_CALL_VM: {
     callvm (local);
 
     local->ip = callvm_stage2_position;
-    //local->ip = vm->ip - 5;
+    //local->ip = a->ip - 5;
 
-    } continue;
+    } continue; //: case OP_CALL_VM:
 
+//
+// call a C Function
+//
+case OP_CALL:
+    {
+    int (*func)() = *(void**)(a->code+a->ip);
+    float (*func_float)() = *(void**)(a->code+a->ip);
+    a->ip += sizeof(void*);
+    UCHAR arg_count = (UCHAR)(a->code[a->ip++]);
+    UCHAR return_type = (UCHAR)(a->code[a->ip++]);
 
+    switch (arg_count) {
+    case 0: // no argument
+        if (return_type == TYPE_NO_RETURN) // 0 | no return
+            func ();
+        else if (return_type == TYPE_FLOAT)
+            eax.f = func_float ();
+        else
+            eax.i = func ();
+        break; //: case 0:
+
+    case 1: // 1 argument
+        if (return_type == TYPE_NO_RETURN) // 0 | no return
+            func (sp[0]);
+        else if (return_type == TYPE_FLOAT)
+            eax.f = func_float (sp[0]);
+        else
+            eax.i = func (sp[0]);
+        sp--;
+        break; //: case 1:
+
+    case 2: // 2 arguents
+        if (return_type == TYPE_NO_RETURN) // 0 | no return
+            func (sp[-1], sp[0]);
+        else if (return_type == TYPE_FLOAT)
+            eax.f = func_float (sp[-1], sp[0]);
+        else
+            eax.i = func (sp[-1], sp[0]);
+        sp -= 2;
+        break; //: case 2:
+
+    case 3: // 3 arguents
+        if (return_type == TYPE_NO_RETURN) // 0 | no return
+            func (sp[-2], sp[-1], sp[0]);
+        else if (return_type == TYPE_FLOAT)
+            eax.f = func_float (sp[-2], sp[-1], sp[0]);
+        else
+            eax.i = func (sp[-2], sp[-1], sp[0]);
+        sp -= 3;
+        break; //: case 3:
+
+    case 4: // 4 arguents
+        if (return_type == TYPE_NO_RETURN) // 0 | no return
+            func (sp[-3], sp[-2], sp[-1], sp[0]);
+        else if (return_type == TYPE_FLOAT)
+            eax.f = func_float (sp[-3], sp[-2], sp[-1], sp[0]);
+        else
+            eax.i = func (sp[-3], sp[-2], sp[-1], sp[0]);
+        sp -= 4;
+        break; //: case 4:
+
+    }//: switch (arg_count)
+
+    } continue; //: case OP_CALL:
 
 case OP_HALT:
-    //printf ("\nFunction vm_run()\nOP_HALT: (sp - stack): %d  sp[0].i = %d\n\n", (sp-stack), sp[0].i);
+    a->ip = 0;
+    //printf ("OP_HALT: (sp - stack) = %d\n", (int)(sp-stack));
     return;
-
     }//: switch (a->code[a->ip++])
     }//: for (;;)
 
@@ -319,9 +412,14 @@ ASM *asm_new (UINT size) {
     ASM *a = (ASM*)malloc (sizeof(ASM));
     if (a && (a->code = (UCHAR*)malloc(size)) != NULL) {
         a->p = a->code;
+        a->local_count = 0;
+        a->ip = 0;
+        a->local = NULL;
         a->label = NULL;
         a->jump = NULL;
-        a->ip = 0;
+        //-------------------
+        //a->name[0] = 0;
+        //a->len = 0;
         return a;
     }
     return NULL;
@@ -352,12 +450,14 @@ void asm_reset (ASM *a) {
     a->label = NULL;
     a->jump  = NULL;
     a->ip = 0;
+    a->local_count = 0;
+    //a->len = 0;
 }
 
 void asm_end (ASM *a) {
     ASM_label *label = a->label;
 
-    *a->p++ = OP_HALT;
+    emit_halt(a);
 
     //-----------------------
     // change jump:
@@ -405,49 +505,103 @@ void asm_label (ASM *a, char *name) {
 }
 
 void emit_push_int (ASM *a, int i) {
+#ifdef DEBUG
+    printf ("%04d  push_int\n", a->p-a->code);
+#endif
     *a->p++ = OP_PUSH_INT;
     *(int*)a->p = i;
     a->p += 4;
 }
 void emit_push_float (ASM *a, float value) {
+#ifdef DEBUG
+    printf ("%04d  push_float\n", a->p-a->code);
+#endif
     *a->p++ = OP_PUSH_FLOAT;
     *(float*)a->p = value;
     a->p += 4;
 }
 void emit_push_var (ASM *a, UCHAR index) {
+#ifdef DEBUG
+    printf ("%04d  push_var\n", a->p-a->code);
+#endif
     *a->p++ = OP_PUSH_VAR;
     *a->p++ = index;
 }
 
 void emit_push_arg (ASM *a, UCHAR i) {
+#ifdef DEBUG
+    printf ("%04d  push_arg\n", a->p-a->code);
+#endif
     *a->p++ = OP_PUSH_ARG;
     *a->p++ = i;
 }
-
+void emit_push_local (ASM *a, UCHAR i) {
+#ifdef DEBUG
+    printf ("%04d  push_local\n", a->p-a->code);
+#endif
+    *a->p++ = OP_PUSH_LOCAL;
+    *a->p++ = i;
+}
+void emit_push_string (ASM *a, char *s) {
+#ifdef DEBUG
+    printf ("%04d  push_string\n", a->p-a->code);
+#endif
+    *a->p++ = OP_PUSH_STRING;
+    *(void**)a->p = s;
+    a->p += sizeof(void*);
+}
 void emit_pop_var (ASM *a, UCHAR i) {
+#ifdef DEBUG
+    printf ("%04d  pop_var\n", a->p-a->code);
+#endif
     *a->p++ = OP_POP_VAR;
     *a->p++ = i;
 }
+void emit_pop_local (ASM *a, UCHAR i) {
+#ifdef DEBUG
+    printf ("%04d  pop_local\n", a->p-a->code);
+#endif
+    *a->p++ = OP_POP_LOCAL;
+    *a->p++ = i;
+}
+
 void emit_pop_eax (ASM *a) {
+#ifdef DEBUG
+    printf ("%04d  pop_eax\n", a->p-a->code);
+#endif
     *a->p++ = OP_POP_EAX;
 }
 
 void emit_mul_int (ASM *a) {
+#ifdef DEBUG
+    printf ("%04d  mul_int\n", a->p-a->code);
+#endif
     *a->p++ = OP_MUL_INT;
 }
 void emit_add_int (ASM *a) {
+#ifdef DEBUG
+    printf ("%04d  add_int\n", a->p-a->code);
+#endif
     *a->p++ = OP_ADD_INT;
 }
 void emit_add_float (ASM *a) {
+#ifdef DEBUG
+    printf ("%04d  add_float\n", a->p-a->code);
+#endif
     *a->p++ = OP_ADD_FLOAT;
 }
 
 void emit_print_eax (ASM *a, UCHAR type) {
+#ifdef DEBUG
+    printf ("%04d  print_eax\n", a->p-a->code);
+#endif
     *a->p++ = OP_PRINT_EAX;
     *a->p++ = type;
 }
 void emit_print_string (ASM *a, UCHAR size, const char *str) {
-//printf("PRINTS POS: %d\n", (vm->p-vm->code));
+#ifdef DEBUG
+    printf ("%04d  print_string\n", a->p-a->code);
+#endif
     *a->p++ = OP_PRINT_STRING;
     *a->p++ = size;
     while (*str) {
@@ -456,9 +610,16 @@ void emit_print_string (ASM *a, UCHAR size, const char *str) {
 }
 
 void emit_halt (ASM *a) {
+#ifdef DEBUG
+    printf ("%04d  halt\n", a->p-a->code);
+#endif
     *a->p++ = OP_HALT;
 }
+
 void emit_call (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
+#ifdef DEBUG
+    printf ("%04d  call\n", a->p-a->code);
+#endif
     *a->p++ = OP_CALL;
     *(void**)a->p = func;
     a->p += sizeof(void*);
@@ -466,21 +627,46 @@ void emit_call (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
     *a->p++ = return_type;
 }
 
-void emit_call_vm (ASM *a, void *func, UCHAR arg_count) {
+void emit_call_vm (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
+#ifdef DEBUG
+    printf ("%04d  call_vm\n", a->p-a->code);
+#endif
     *a->p++ = OP_CALL_VM;
     *(void**)a->p = func;
     a->p += sizeof(void*);
     *a->p++ = arg_count;
+    *a->p++ = return_type;
 }
 
 
 void emit_mov_eax_var (ASM *a, UCHAR index) {
+#ifdef DEBUG
+    printf ("%04d  mov_var_eax\n", a->p-a->code);
+#endif
     *a->p++ = OP_MOV_EAX_VAR;
     *a->p++ = index;
 }
 
+void emit_print_local (ASM *a, UCHAR index) {
+#ifdef DEBUG
+    printf ("%04d  print_local\n", a->p-a->code);
+#endif
+    *a->p++ = OP_PRINT_LOCAL;
+    *a->p++ = index;
+}
+
 void emit_inc_var_int (ASM *a, UCHAR index) {
+#ifdef DEBUG
+    printf ("%04d  inc_var_int\n", a->p-a->code);
+#endif
     *a->p++ = OP_INC_VAR_INT;
+    *a->p++ = index;
+}
+void emit_inc_local_int (ASM *a, UCHAR index) {
+#ifdef DEBUG
+    printf ("%04d  inc_local_int\n", a->p-a->code);
+#endif
+    *a->p++ = OP_INC_LOCAL_INT;
     *a->p++ = index;
 }
 
@@ -489,9 +675,15 @@ UINT asm_get_len (ASM *a) {
 }
 
 void emit_cmp_int (ASM *a) {
+#ifdef DEBUG
+    printf ("%04d  cmp_int\n", a->p-a->code);
+#endif
     *a->p++ = OP_CMP_INT;
 }
 void emit_jump_jmp (ASM *a, char *name) {
+#ifdef DEBUG
+    printf ("%04d  jump_jmp\n", a->p-a->code);
+#endif
     ASM_jump *jump;
 
     if (name && (jump = (ASM_jump*)malloc (sizeof(ASM_jump))) != NULL) {
@@ -530,15 +722,27 @@ static void conditional_jump (ASM *vm, char *name, UCHAR type) {
     }
 }
 void emit_jump_jge (ASM *a, char *name) {
+#ifdef DEBUG
+    printf ("%04d  jump_jge\n", a->p-a->code);
+#endif
     conditional_jump (a, name, OP_JUMP_JGE);
 }
 void emit_jump_jle (ASM *a, char *name) {
+#ifdef DEBUG
+    printf ("%04d  jump_jle\n", a->p-a->code);
+#endif
     conditional_jump (a, name, OP_JUMP_JLE);
 }
 void emit_jump_jeq (ASM *a, char *name) {
+#ifdef DEBUG
+    printf ("%04d  jump_jeq\n", a->p-a->code);
+#endif
     conditional_jump (a, name, OP_JUMP_JEQ);
 }
 void emit_jump_jne (ASM *a, char *name) {
+#ifdef DEBUG
+    printf ("%04d  jump_jne\n", a->p-a->code);
+#endif
     conditional_jump (a, name, OP_JUMP_JNE);
 }
 

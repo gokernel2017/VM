@@ -20,6 +20,8 @@
 //   * Expression
 //   * Call C Native Functions
 //   * String Display Implementation
+//   * Variable Local Implementation
+//   * Recursive implementation
 //
 // COMPILE:
 //   make clean
@@ -31,18 +33,30 @@
 // FILE:
 //   mini.c
 //
+// CODE IN ORDER ... SECTION:
+// ---------------------------
+//   01: DEFINE / ENUM
+//   02: STRUCT
+//   03: PROTOTYPES
+//   04: VARIABLES
+//   05: FUNCTIONS ...
+// --------------------------
+//
 // BY: Francisco - gokernel@hotmail.com
 //
 //-------------------------------------------------------------------
-// LINES: 944
+//
 #include "src/vm.h"
 
-// define/enum:
+//-----------------------------------------------
+//-------------  01: DEFINE / ENUM  -------------
+//-----------------------------------------------
 //
 #define LEXER_NAME_SIZE   255
 #define LEXER_TOKEN_SIZE  1024 * 4
 #define STR_ERRO_SIZE     1024
 #define INCLUDE_FILE_MAX  10
+#define LOCAL_MAX         10
 
 enum {
     // types:
@@ -67,14 +81,23 @@ enum {
 };
 enum { FUNC_TYPE_NATIVE_C = 0, FUNC_TYPE_COMPILED, FUNC_TYPE_VM };
 
-typedef struct {
+//-----------------------------------------------
+//-----------------  02: STRUCT  ----------------
+//-----------------------------------------------
+//
+typedef struct LEXER      LEXER;
+typedef struct TFunc      TFunc;
+typedef struct F_STRING   F_STRING; // fixed string
+typedef struct LOCAL_TEMP LOCAL_TEMP;
+
+struct LEXER {
     char  *text;
     char  name  [LEXER_NAME_SIZE];
     char  token [LEXER_TOKEN_SIZE];
     int   pos;  // text [ pos ]
     int   line;
     int   tok;
-}LEXER;
+};
 struct INCLUDE { // used in: word_include()
     ASM     *vm;
     LEXER   lexer;
@@ -85,7 +108,6 @@ typedef struct {
     char  type[20]; // "int", "float", "data_struct"
     char  name[20];
 }ARG;
-typedef struct TFunc TFunc;
 struct TFunc {
     char    *name;
     char    *proto; // prototype
@@ -94,31 +116,25 @@ struct TFunc {
     int     len;
     TFunc   *next;
 };
-void  lib_info  (int arg);
-int   lib_add   (int a, int b);
-void  lib_help  (void);
-static TFunc stdlib[]={
-  //-----------------------------------------------------------------
-  // char*        char*   UCHAR*/ASM*             int   int   FUNC*
-  // name         proto   code                    type  len   next
-  //-----------------------------------------------------------------
-  { "info",       "0i",   (UCHAR*)lib_info,       0,    0,    NULL },
-  { "add",        "iii",  (UCHAR*)lib_add,        0,    0,    NULL },
-  { "help",       "00",   (UCHAR*)lib_help,       0,    0,    NULL },
-  { NULL,         NULL,   NULL,                   0,    0,    NULL }
-};
+struct LOCAL_TEMP {
+    char    name [20];
+    int     type;
+    VALUE   value;
+    void    *info;
+}local[LOCAL_MAX];
+struct F_STRING {
+    char *s;
+    int   i;
+    F_STRING *next;
+}; // fixed string
 
-static TFunc *Gfunc = NULL;  // store the user functions
-static ARG argument[20];
-ASM *asm_function;
-static int loop_level;
-int erro, is_function, is_recursive, main_variable_type, var_type, argument_count;
-static char
-    func_name [100],
-    array_break[20][20]   // used to word break
-    ;
-
-// prototypes:
+//-----------------------------------------------
+//---------------  03: PROTOTYPES  --------------
+//-----------------------------------------------
+//
+int         lex           (LEXER *l);
+int         Parse         (LEXER *l, ASM *a, char *text, char *name);
+//
 static void word_int      (LEXER *l, ASM *a);
 static void word_if       (LEXER *l, ASM *a);
 static void word_for      (LEXER *l, ASM *a);
@@ -132,27 +148,69 @@ static void expr2         (LEXER *l, ASM *a);
 static void expr3         (LEXER *l, ASM *a);
 static void atom          (LEXER *l, ASM *a);
 //-------------------------------------------
-int Parse (LEXER *l, ASM *a, char *text, char *name);
+static int  stmt          (LEXER *l, ASM *a);
 static int  see           (LEXER *l);
-
-static char strErro[STR_ERRO_SIZE];
-void Erro (char *s) {
-    erro++;
-    if ((strlen(strErro) + strlen(s)) < STR_ERRO_SIZE)
-        strcat (strErro, s);
-}
-char *ErroGet (void) {
-    if (strErro[0])
-        return strErro;
-    else
-        return NULL;
-}
-void ErroReset (void) {
-    erro = 0;
-    strErro[0] = 0;
-}
+void        Erro          (char *s);
+F_STRING  * fs_new        (char *s);
 //
-// return tok number
+void  lib_info    (int arg);
+int   lib_add     (int a, int b);
+void  lib_help    (void);
+void  lib_disasm  (char *s);
+
+//-----------------------------------------------
+//----------------  04: VARIABLES  --------------
+//-----------------------------------------------
+//
+ASM             * asm_function;
+static TFunc    * Gfunc = NULL;  // store the user functions
+static F_STRING * fs = NULL;
+static ARG        argument [20];
+static int        loop_level;
+static char       strErro [STR_ERRO_SIZE];
+//
+int
+    erro,
+    is_function,
+    is_recursive,
+    main_variable_type,
+    var_type,
+    argument_count,
+    local_count
+    ;
+
+static char
+    func_name [100],
+    array_break [20][20]   // used to word break
+    ;
+
+static TFunc stdlib[]={
+  //-----------------------------------------------------------------
+  // char*        char*   UCHAR*/ASM*             int   int   FUNC*
+  // name         proto   code                    type  len   next
+  //-----------------------------------------------------------------
+  { "info",       "0i",   (UCHAR*)lib_info,       0,    0,    NULL },
+  { "add",        "iii",  (UCHAR*)lib_add,        0,    0,    NULL },
+  { "help",       "00",   (UCHAR*)lib_help,       0,    0,    NULL },
+//  { "disasm",     "0s",   (UCHAR*)lib_disasm,     0,    0,    NULL },
+  { NULL,         NULL,   NULL,                   0,    0,    NULL }
+};
+
+//-----------------------------------------------
+//---------------  05: FUNCTIONS  ---------------
+//-----------------------------------------------
+//
+
+void func_null (void) { printf ("FUNCTION: func_null\n"); }
+TFunc func_null_default = { "func_null", "00", (UCHAR*)func_null, 0, 0, NULL };
+
+
+//-------------------------------------------------------------------
+// LEXICAL ANALYZER:
+//
+//   return tok number or 0.
+//
+//-------------------------------------------------------------------
 //
 int lex (LEXER *l) {
     register char *p;
@@ -266,14 +324,13 @@ top:
         l->tok = TOK_PLUS_PLUS;
         return TOK_PLUS_PLUS;
     }
-
     if (c=='=' && next == '=') { // ==
         *p++ = '='; *p++ = '='; *p = 0;
         l->pos += 2;
         l->tok = TOK_EQUAL_EQUAL;
         return TOK_EQUAL_EQUAL;
     }
-    if (c=='&' && next == '&') { // ==
+    if (c=='&' && next == '&') { // &&
         *p++ = '&'; *p++ = '&'; *p = 0;
         l->pos += 2;
         l->tok = TOK_AND_AND;
@@ -298,6 +355,22 @@ void lex_set (LEXER *l, char *text, char *name) {
             strcpy (l->name, name);
     }
 }//: lex_set()
+
+void Erro (char *s) {
+    erro++;
+    if ((strlen(strErro) + strlen(s)) < STR_ERRO_SIZE)
+        strcat (strErro, s);
+}
+char *ErroGet (void) {
+    if (strErro[0])
+        return strErro;
+    else
+        return NULL;
+}
+void ErroReset (void) {
+    erro = 0;
+    strErro[0] = 0;
+}
 
 void CreateVarInt (char *name, int value) {
     TVar *v = Gvar;
@@ -326,7 +399,23 @@ int VarFind (char *name) {
     }
     return -1;
 }
+int LocalFind (char *name) {
+    int i;
+    for (i = 0; i < local_count; i++) {
+        if (local[i].name && !strcmp(local[i].name, name))
+      return i;
+    }
+    return -1;
+}
 TFunc *FuncFind (char *name) {
+    TFunc *fi;
+
+    if (!strcmp(name, func_name)) {
+        is_recursive = 1;
+        fi = &func_null_default;
+        return fi;
+    }
+
     // array:
     TFunc *lib = stdlib;
     while (lib->name) {
@@ -389,11 +478,13 @@ char * FileOpen (const char *FileName) {
 
     return NULL;
 }
+
 static int expr0 (LEXER *l, ASM *a) {
     if (l->tok == TOK_ID) {
-        int i;
-        if ((i=VarFind(l->token)) != -1) {
-            if (see(l)=='=') {
+        int var=-1, local=-1;
+        // i = a * b + c;
+        if (see(l)=='=') {
+            if ((var=VarFind(l->token)) != -1 || (local=LocalFind(l->token)) != -1) {
                 char token[255];
                 sprintf (token, "%s", l->token);
                 int pos = l->pos; // save
@@ -401,17 +492,24 @@ static int expr0 (LEXER *l, ASM *a) {
                 lex(l);
                 if (l->tok == '=') {
                     lex(l);
-                    expr0(l,a);
+                    expr1(l,a);
                     // Copia o TOPO DA PILHA ( sp ) para a variavel ... e decrementa sp++.
-                    emit_pop_var (a,i);
-                    return i;
+                    if (var!=-1) {
+                        emit_pop_var (a,var);
+                        return var;
+                    }
+                    else
+                    if (local!=-1) {
+                        emit_pop_local (a,local);
+                        return local;
+                    }
                 } else {
                     sprintf (l->token, "%s", token);
                     l->pos = pos; // restore
                     l->tok = tok;
                 }
-            }//: if (see(l)=='=')
-        }//: if ((i=VarFind(l->token)) != -1)
+            }//: if ((i=VarFind(l->token)) != -1)
+        }//: if (see(l)=='=')
     }
     expr1(l,a);
     return -1;
@@ -457,9 +555,13 @@ static void atom (LEXER *l, ASM *a) { // expres
     if (l->tok==TOK_ID) {
         int i;
 
+        if (is_function && local_count && (i=LocalFind(l->token))!=-1) {
+            emit_push_local (a, i);
+            lex(l);
+        }
         // push a argument function:
         //
-        if (is_function && (i=ArgumentFind(l->token))!=-1) {
+        else if (is_function && (i=ArgumentFind(l->token))!=-1) {
 //printf ("pust argument (%s)=%d arg: %d\n", token, line, i);
             emit_push_arg (a, i);
             lex(l);
@@ -473,7 +575,7 @@ static void atom (LEXER *l, ASM *a) { // expres
 
         } else {
             char buf[255];
-            sprintf(buf, "ERRO LINE(%d expr0()): Var Not Found '%s'", l->line, l->token);
+            sprintf(buf, "ERRO LINE(%d ATOM()): Var Not Found '%s'", l->line, l->token);
             Erro (buf);
         }
     }
@@ -507,6 +609,13 @@ void execute_call (LEXER *l, ASM *a, TFunc *func) {
         if (lex(l)!='(') { Erro ("Function need char: '('\n"); return; }
 
         while (lex(l)) {
+            if (l->tok == TOK_STRING) {
+                F_STRING *s = fs_new (l->token);
+                if (s) {
+                    emit_push_string (a, s->s);
+                    if (count++ > 15) break;
+                }
+            }
             if (l->tok==TOK_ID || l->tok==TOK_NUMBER || l->tok=='(') {
                 expr0 (l,a);
                 if (count++ > 15) break;
@@ -523,7 +632,7 @@ void execute_call (LEXER *l, ASM *a, TFunc *func) {
         //
         // here: fi->code ==  ASM*
         //
-        emit_call_vm (a, (ASM*)(func->code), (UCHAR)count);
+        emit_call_vm (a, (ASM*)(func->code), (UCHAR)count, return_type);
     } else {
         emit_call (a, (void*)func->code, (UCHAR)count, return_type);
     }
@@ -538,7 +647,7 @@ void expression (LEXER *l, ASM *a) {
     }
 
     if (l->tok == TOK_ID || l->tok == TOK_NUMBER) {
-        int i;
+        int i, next;
         TFunc *fi;
 
         main_variable_type = var_type = TYPE_INT; // 0
@@ -552,8 +661,16 @@ void expression (LEXER *l, ASM *a) {
       return;
         }
 
+        next = see(l);
+        if ((i = LocalFind(l->token)) != -1) {
+            if (next == TOK_PLUS_PLUS) {
+                lex(l); // ++
+                emit_inc_local_int(a,(UCHAR)i);
+                return;
+            }
+        }
+
         if ((i = VarFind(l->token)) != -1) {
-            int next = see(l);
 
             main_variable_type = var_type = Gvar[i].type;
 
@@ -591,7 +708,7 @@ void expression (LEXER *l, ASM *a) {
 
         // expression type:
         // 10 * 20 + 3 * 5;
-        if (expr0(l,a) == -1) {
+        if (expr0(l,a) == -1) { //
             emit_pop_eax (a);
             emit_print_eax (a,main_variable_type);
         }
@@ -602,15 +719,23 @@ void expression (LEXER *l, ASM *a) {
     }
 }
 
+void do_block (LEXER *l, ASM *a) {
+
+    while (!erro && l->tok && l->tok != '}') {
+        stmt (l,a);
+    }
+    l->tok = ';';
+}
+
 static int stmt (LEXER *l, ASM *a) {
 
     lex (l);
 
     switch (l->tok) {
     case '{':
-        while (!erro && l->tok && l->tok != '}') stmt(l,a);
+        //while (!erro && l->tok && l->tok != '}') stmt(l,a);
         //----------------------------------------------------
-        //do_block (l,a); //<<<<<<<<<<  no recursive  >>>>>>>>>>
+        do_block (l,a); //<<<<<<<<<<  no recursive  >>>>>>>>>>
         //----------------------------------------------------
         return 1;
     case TOK_INT:       word_int      (l,a); return 1;
@@ -640,6 +765,18 @@ static void word_int (LEXER *l, ASM *a) {
                     value = atoi (l->token);
             }
             if (is_function) {
+                //---------------------------------------------------
+                // this is temporary ...
+                // in function(word_function) changes ...
+                //---------------------------------------------------
+                if (local_count < LOCAL_MAX) {
+                    sprintf (local[local_count].name, "%s", name);
+                    local[local_count].type = TYPE_INT;
+                    local[local_count].value.i = value;
+                    local[local_count].info = NULL;
+                    local_count++;
+                }
+                else Erro ("Variable Local Max 10\n");
                 // ... need implementation ...
             }
             else CreateVarInt (name, value);
@@ -734,7 +871,7 @@ static void word_for (LEXER *l, ASM *a) {
             return;
         }
 
-loop_level++;
+loop_level++;  // <<<<<<<<<<  ! PUSH  >>>>>>>>>>
 
         for_count++;
         for_count_total++;
@@ -749,7 +886,7 @@ loop_level++;
         asm_label (a, array_break[loop_level]); // used to break
         for_count--;
 
-loop_level--;
+loop_level--;  // <<<<<<<<<<  ! POP  >>>>>>>>>>
     }
 
 }
@@ -837,6 +974,7 @@ static void word_function (LEXER *l, ASM *a) {
     if (l->tok=='{') l->pos--; else { Erro("Word Function need char: '{'"); return; }
 
     is_function = 1;
+    local_count = 0;
 //    local.count = 0;
     strcpy (func_name, name);
 
@@ -869,6 +1007,21 @@ static void word_function (LEXER *l, ASM *a) {
         vm->code[func->len+1] = 0;
         vm->code[func->len+2] = 0;
 
+        if (local_count) {
+            int i;
+            TVar *v = (TVar*) malloc(sizeof(TVar) * local_count);
+            if (v) {
+                for (i = 0; i < local_count; i++) {
+                    v[i].name  = strdup(local[i].name);
+                    v[i].type  = local[i].type;
+                    v[i].value = local[i].value;
+                    v[i].info  = local[i].info;
+                }
+                vm->local = v;
+                vm->local_count = local_count;
+            }
+            local_count = 0;
+        }
 //printf ("FUNCAO SIZE: %d\n", func->len);
 
         //-------------------------------------------
@@ -876,21 +1029,28 @@ static void word_function (LEXER *l, ASM *a) {
         // Resolve Recursive:
         // change 4 bytes ( func_null ) to this
         //-------------------------------------------
-/*
-        if (is_recursive)
+        if (is_recursive) {
         for (i=0;i<func->len;i++) {
             if (vm->code[i]==OP_CALL && *(void**)(vm->code+i+1) == func_null) {
 //printf ("FUNCAO POSITION: %d\n", i);
-                vm->code[i] = OP_CALLVM;      //<<<<<<<  change here  >>>>>>>
+                vm->code[i] = OP_CALL_VM;      //<<<<<<<  change here  >>>>>>>
                 *(void**)(vm->code+i+1) = vm; //<<<<<<<  change here  >>>>>>>
-                i += 5;
+//                i += 6;
             }
         }
-*/
+        }
+
+        //---------------------------------------
+        // Used for !DEBUG:
+        //---------------------------------------
+        //sprintf (vm->name, "%s", name);
+        //vm->len = len;
+        //---------------------------------------
+
         func->code = (UCHAR*)vm;
 
     } else {
-        is_function = is_recursive = argument_count = *func_name = 0;
+        is_function = is_recursive = argument_count = local_count = *func_name = 0;
         return;
     }
 
@@ -902,6 +1062,9 @@ static void word_function (LEXER *l, ASM *a) {
 
 }//: word_function ()
 
+//
+// USAGE: include "FileName.s"
+//
 static void word_include (LEXER *l, ASM *a) {
     static int count = 0;;
 
@@ -912,7 +1075,7 @@ static void word_include (LEXER *l, ASM *a) {
         return;
     }
 
-    count++; // <<<<<<<<<<  ! PUSH  >>>>>>>>>>
+count++; // <<<<<<<<<<  ! PUSH  >>>>>>>>>>
 
     inc[count].name = strdup(l->token);
 
@@ -933,8 +1096,32 @@ static void word_include (LEXER *l, ASM *a) {
 
     free (inc[count].name);
 
-    count--; // <<<<<<<<<<  ! POP  >>>>>>>>>>
+count--; // <<<<<<<<<<  ! POP  >>>>>>>>>>
+
+}//: word_include()
+
+F_STRING *fs_new (char *s) {
+    static int count = 0;
+    F_STRING *p = fs, *n;
+
+    while (p) {
+        if (!strcmp(p->s,s)) return p;
+        p = p->next;
+    }
+
+    if ((n = (F_STRING*)malloc(sizeof(F_STRING)))==NULL) return NULL;
+    n->s = strdup(s);
+
+//printf ("FIXED: %p\n", &n->s);
+
+    n->i = count++;
+    // add on top
+    n->next = fs;
+    fs = n;
+
+    return n;
 }
+
 void lib_info (int arg) {
     switch (arg) {
     case 1: {
@@ -1001,6 +1188,38 @@ void lib_help (void) {
     printf ("\nFunction: HELP ... testing ...\n");
 }
 
+/*
+void lib_disasm (char *name) {
+    // linked list:
+    TFunc *func = Gfunc;
+    ASM *a;
+    int len, i = 0;
+
+    while (func) {
+        if (!strcmp(func->name, name) && func->type==FUNC_TYPE_VM) {
+            printf ("\nDisasm Function(%s) | Code Len: %d\n", name, func->len-1);
+            a = (ASM*)(func->code);
+            len = func->len;
+            break;;
+        }
+        func = func->next;
+    }
+    printf ("-------------------------------------\n");
+    for (;;) {
+        if (opcode[ a->code[i] ].name) {
+            printf ("%04d  OP_%03d ( size %d )  %s\n", i, a->code[i], opcode[ a->code[i] ].size, opcode[ a->code[i] ].name);
+            if (opcode[ a->code[i] ].size == -1)
+                i += a->code[i+1]+2;
+            else
+                i += opcode[ a->code[i] ].size;
+            if (i >= len) break;
+        }
+        else break;
+    }
+    if (i < len) printf ("      ......\n");
+    printf ("-------------------------------------\n");
+}
+*/
 
 int Parse (LEXER *l, ASM *a, char *text, char *name) {
     lex_set (l, text, name);
@@ -1011,6 +1230,7 @@ int Parse (LEXER *l, ASM *a, char *text, char *name) {
         // ... compiling ...
     }
     asm_end (a);
+    //a->len = (a->p-a->code);
     return erro;
 }
 ASM *mini_Init (UINT size) {
@@ -1024,6 +1244,7 @@ ASM *mini_Init (UINT size) {
     }
     return NULL;
 }
+
 int main (int argc, char **argv) {
     LEXER l;
     ASM *a;
@@ -1032,13 +1253,14 @@ int main (int argc, char **argv) {
     if ((a = mini_Init (ASM_DEFAULT_SIZE)) == NULL)
   return -1;
 
+    //sprintf (a->name, "%s", "main");
+
     if (argc >= 2 && (text = FileOpen (argv[1])) != NULL) {
         if (Parse(&l, a, text, argv[1])==0) {
             vm_run (a);
         }
         else printf ("ERRO:\n%s\n", ErroGet());
         free (text);
-
     } else {
 
 //-------------------------------------------
@@ -1073,10 +1295,10 @@ int main (int argc, char **argv) {
                 vm_run (a);
             }
             else printf ("\n%s\n", ErroGet());
-        }
+        }//: for (;;)
     }
 
-    printf ("Exiting With Sucess: \n");
+    printf ("Exiting With Sucess:\n");
 
     return 0;
 }

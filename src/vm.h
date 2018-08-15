@@ -37,21 +37,29 @@ extern "C" {
 #define GVAR_SIZE         255
 
 enum {
+    // size: 1 byte
     OP_HALT = 0,
 
+    // size: 1 byte
+    OP_INC_VAR_INT, // increment variable int | a++;
+
     // Push a int value in the stack | sp++
-    //   emit: 5 bytes
+    //   size: 5 bytes
     OP_PUSH_INT,
 
     // Push a float value in the stack | sp++
-    //   emit: 5 bytes
+    //   size: 5 bytes
     OP_PUSH_FLOAT,
 
     OP_PUSH_VAR,
     OP_PUSH_ARG,
+    OP_PUSH_LOCAL, // local variable in function
+    OP_PUSH_STRING,
 
     OP_POP_VAR,
+    OP_POP_LOCAL,
     OP_POP_EAX,
+    OP_PRINT_EAX,
 
     OP_MUL_INT,
     OP_DIV_INT,
@@ -73,20 +81,21 @@ enum {
     OP_JUMP_JG,
     OP_JUMP_JL,
 
-    OP_PRINT_EAX,
     OP_PRINT_STRING,
 
+    OP_PRINT_LOCAL,
+
     OP_MOV_EAX_VAR,
-    OP_INC_VAR_INT, // increment variable int | a++;
+
+    OP_INC_LOCAL_INT,
+
+    OP_CALL_VM,
 
     // Call a Native C Function ... use the stack to pass arguments,
     // the return value in ( ret.? )
     //   emit in 32 bits: 7 bytes
     //   emit in 64 bits: 11 bytes
-    OP_CALL,
-
-    OP_CALL_VM,
-    OP_PRINT_ARG0
+    OP_CALL
 };
 enum {
     TYPE_INT = 0,
@@ -106,21 +115,29 @@ typedef struct ASM_label  ASM_label;
 typedef struct ASM_jump   ASM_jump;
 typedef union  VALUE      VALUE;
 typedef struct TVar       TVar;
-
 union VALUE {
     int     i;
     float   f;
-    char    *pchar;
+    char    *s;
     void    *pvoid;
     UCHAR   uchar;
 };
 struct ASM { // private struct
     UCHAR     *p;
     UCHAR     *code;
-    VALUE     arg [10]; // used functions get argument
     int       ip;
+    VALUE     arg [10]; // used functions get argument
     ASM_label *label;
     ASM_jump  *jump;
+    //
+    int       local_count;
+    TVar      *local;
+
+    //-----------------------
+    // Used for !DEBUG :
+    //-----------------------
+//    char      name[25]; // funtion name ... only for debug ...
+//    int       len;
 };
 struct ASM_label { // private struct
     char      *name;
@@ -138,8 +155,15 @@ struct TVar {
     VALUE   value;
     void    *info;  // any information ... struct type use this
 };
+struct OPCODE {
+    int   op;
+    const char *name;
+    int   size;
+};
 
 extern TVar   Gvar[GVAR_SIZE]; // global:
+
+//extern struct OPCODE opcode[];
 
 //-------------------------------------------------------------------
 //-------------------------  ASM PUBLIC API  ------------------------
@@ -162,16 +186,21 @@ extern void emit_push_int     (ASM *a, int i);
 extern void emit_push_float   (ASM *a, float value);
 extern void emit_push_var     (ASM *a, UCHAR index);
 extern void emit_push_arg     (ASM *a, UCHAR i);
+extern void emit_push_local   (ASM *a, UCHAR i);
+extern void emit_push_string  (ASM *a, char *s);
 extern void emit_pop_var      (ASM *a, UCHAR i);
+extern void emit_pop_local    (ASM *a, UCHAR i);
 extern void emit_pop_eax      (ASM *a);
 extern void emit_mul_int      (ASM *a);
 extern void emit_add_int      (ASM *a);
 extern void emit_print_eax    (ASM *a, UCHAR type);
 extern void emit_print_string (ASM *a, UCHAR size, const char *str);
+extern void emit_print_local  (ASM *a, UCHAR index);
 extern void emit_mov_eax_var  (ASM *a, UCHAR index);
 extern void emit_inc_var_int  (ASM *a, UCHAR index);
+extern void emit_inc_local_int(ASM *a, UCHAR index);
 extern void emit_call         (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
-extern void emit_call_vm      (ASM *a, void *func, UCHAR arg_count);
+extern void emit_call_vm      (ASM *a, void *func, UCHAR arg_count, UCHAR return_type);
 extern void emit_halt         (ASM *a);
 
 extern void emit_cmp_int      (ASM *a);
