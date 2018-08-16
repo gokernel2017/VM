@@ -1,6 +1,7 @@
 
 int i, a= 100, b = 300;
 
+/*
 function loop () {
 
     i = 70;
@@ -16,13 +17,13 @@ function loop () {
     }
 
 }
+*/
 
-/*
 function hello () {
     a = b;
     a++;
     a;
 }
-    disasm ("loop");
+
+//    disasm ("loop");
     //disasm ("hello");
-*/

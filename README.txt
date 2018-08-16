@@ -8,6 +8,8 @@
  TESTING:
    mini
    or
+   mini -d
+   or
    mini test.s
    mini function.s
 

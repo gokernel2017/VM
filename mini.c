@@ -22,6 +22,7 @@
 //   * String Display Implementation
 //   * Variable Local Implementation
 //   * Recursive implementation
+//   * Implementation Disasm MODE | -d
 //
 // COMPILE:
 //   make clean
@@ -156,7 +157,6 @@ F_STRING  * fs_new        (char *s);
 void  lib_info    (int arg);
 int   lib_add     (int a, int b);
 void  lib_help    (void);
-void  lib_disasm  (char *s);
 
 //-----------------------------------------------
 //----------------  04: VARIABLES  --------------
@@ -179,7 +179,7 @@ int
     local_count
     ;
 
-static char
+char
     func_name [100],
     array_break [20][20]   // used to word break
     ;
@@ -192,7 +192,6 @@ static TFunc stdlib[]={
   { "info",       "0i",   (UCHAR*)lib_info,       0,    0,    NULL },
   { "add",        "iii",  (UCHAR*)lib_add,        0,    0,    NULL },
   { "help",       "00",   (UCHAR*)lib_help,       0,    0,    NULL },
-//  { "disasm",     "0s",   (UCHAR*)lib_disasm,     0,    0,    NULL },
   { NULL,         NULL,   NULL,                   0,    0,    NULL }
 };
 
@@ -975,7 +974,6 @@ static void word_function (LEXER *l, ASM *a) {
 
     is_function = 1;
     local_count = 0;
-//    local.count = 0;
     strcpy (func_name, name);
 
     // compiling to buffer ( f ):
@@ -1022,7 +1020,6 @@ static void word_function (LEXER *l, ASM *a) {
             }
             local_count = 0;
         }
-//printf ("FUNCAO SIZE: %d\n", func->len);
 
         //-------------------------------------------
         // HACKING ... ;)
@@ -1032,10 +1029,9 @@ static void word_function (LEXER *l, ASM *a) {
         if (is_recursive) {
         for (i=0;i<func->len;i++) {
             if (vm->code[i]==OP_CALL && *(void**)(vm->code+i+1) == func_null) {
-//printf ("FUNCAO POSITION: %d\n", i);
                 vm->code[i] = OP_CALL_VM;      //<<<<<<<  change here  >>>>>>>
                 *(void**)(vm->code+i+1) = vm; //<<<<<<<  change here  >>>>>>>
-//                i += 6;
+                i += 5;
             }
         }
         }
@@ -1043,7 +1039,7 @@ static void word_function (LEXER *l, ASM *a) {
         //---------------------------------------
         // Used for !DEBUG:
         //---------------------------------------
-        //sprintf (vm->name, "%s", name);
+        sprintf (vm->name, "%s", name);
         //vm->len = len;
         //---------------------------------------
 
@@ -1188,39 +1184,6 @@ void lib_help (void) {
     printf ("\nFunction: HELP ... testing ...\n");
 }
 
-/*
-void lib_disasm (char *name) {
-    // linked list:
-    TFunc *func = Gfunc;
-    ASM *a;
-    int len, i = 0;
-
-    while (func) {
-        if (!strcmp(func->name, name) && func->type==FUNC_TYPE_VM) {
-            printf ("\nDisasm Function(%s) | Code Len: %d\n", name, func->len-1);
-            a = (ASM*)(func->code);
-            len = func->len;
-            break;;
-        }
-        func = func->next;
-    }
-    printf ("-------------------------------------\n");
-    for (;;) {
-        if (opcode[ a->code[i] ].name) {
-            printf ("%04d  OP_%03d ( size %d )  %s\n", i, a->code[i], opcode[ a->code[i] ].size, opcode[ a->code[i] ].name);
-            if (opcode[ a->code[i] ].size == -1)
-                i += a->code[i+1]+2;
-            else
-                i += opcode[ a->code[i] ].size;
-            if (i >= len) break;
-        }
-        else break;
-    }
-    if (i < len) printf ("      ......\n");
-    printf ("-------------------------------------\n");
-}
-*/
-
 int Parse (LEXER *l, ASM *a, char *text, char *name) {
     lex_set (l, text, name);
     ErroReset ();
@@ -1253,11 +1216,19 @@ int main (int argc, char **argv) {
     if ((a = mini_Init (ASM_DEFAULT_SIZE)) == NULL)
   return -1;
 
+    if (argc >= 2 && !strcmp(argv[1], "-d"))
+        disasm_mode = 1;
+
     //sprintf (a->name, "%s", "main");
 
-    if (argc >= 2 && (text = FileOpen (argv[1])) != NULL) {
+    if (argc >= 2 && disasm_mode == 0 && (text = FileOpen (argv[1])) != NULL) {
+
+        if (argc >= 3 && !strcmp(argv[2], "-d"))
+            disasm_mode = 1;
+
         if (Parse(&l, a, text, argv[1])==0) {
-            vm_run (a);
+            if (disasm_mode==0)
+                vm_run (a);
         }
         else printf ("ERRO:\n%s\n", ErroGet());
         free (text);
@@ -1271,6 +1242,8 @@ int main (int argc, char **argv) {
 
         printf ("__________________________________________________________________\n\n");
         printf (" MINI Language Version: %d.%d.%d\n\n", 0, 0, 1);
+        if (disasm_mode)
+        printf (" <<<<<<<<<<  Disasm MODE  >>>>>>>>>>\n\n");
         printf (" To exit type: 'quit' or 'q'\n");
         printf ("__________________________________________________________________\n\n");
 

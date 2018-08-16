@@ -1,7 +1,9 @@
 
 int i = 70;
 
-  "\nPlease Wait ... loop: 70 ... 100\n\n"
+  "\nPlease Wait ... loop: 71 ... 100\n\n"
+
+  i++;
 
   for (;;) {
 

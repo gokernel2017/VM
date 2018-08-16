@@ -136,7 +136,7 @@ struct ASM { // private struct
     //-----------------------
     // Used for !DEBUG :
     //-----------------------
-//    char      name[25]; // funtion name ... only for debug ...
+    char      name[25]; // funtion name ... only for debug ...
 //    int       len;
 };
 struct ASM_label { // private struct
@@ -162,8 +162,7 @@ struct OPCODE {
 };
 
 extern TVar   Gvar[GVAR_SIZE]; // global:
-
-//extern struct OPCODE opcode[];
+extern int    disasm_mode;
 
 //-------------------------------------------------------------------
 //-------------------------  ASM PUBLIC API  ------------------------
