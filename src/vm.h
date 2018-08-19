@@ -119,8 +119,7 @@ union VALUE {
     int     i;
     float   f;
     char    *s;
-    void    *pvoid;
-    UCHAR   uchar;
+    void    *p;
 };
 struct ASM { // private struct
     UCHAR     *p;

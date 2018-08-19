@@ -755,7 +755,7 @@ static void word_int (LEXER *l, ASM *a) {
     while (lex(l)) {
         if (l->tok == TOK_ID) {
             char name[255];
-            int value = 0;
+            long value = 0;
 
             strcpy (name, l->token); // save
 
@@ -1125,7 +1125,7 @@ void lib_info (int arg) {
         int i = 0;
         printf ("VARIABLES:\n---------------\n");
         while (v->name) {
-            if (v->type==TYPE_INT)   printf ("Gvar[%d](%s) = %d\n", i, v->name, v->value.i);
+            if (v->type==TYPE_INT) printf ("Gvar[%d](%s) = %d\n", i, v->name, v->value.i);
             else
             if (v->type==TYPE_FLOAT) printf ("Gvar[%d](%s) = %f\n", i, v->name, v->value.f);
             v++; i++;

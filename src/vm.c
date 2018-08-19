@@ -57,13 +57,13 @@ void vm_run (ASM *a) {
 case OP_PUSH_INT:
     sp++;
     sp->i = *(int*)(a->code+a->ip);
-    a->ip += 4;
+    a->ip += sizeof(int);
     continue;
 
 case OP_PUSH_FLOAT:
     sp++;
     sp->f = *(float*)(a->code+a->ip);
-    a->ip += 4;
+    a->ip += sizeof(float);
     continue;
 
 case OP_PUSH_VAR: {
@@ -462,92 +462,92 @@ void asm_label (ASM *a, char *name) {
 
 void emit_push_int (ASM *a, int i) {
     if (disasm_mode)
-        printf ("%04d  push_int      %d\n", a->p-a->code, i);
+        printf ("%04d  push_int      %d\n", (int)(a->p-a->code), i);
     *a->p++ = OP_PUSH_INT;
     *(int*)a->p = i;
-    a->p += 4;
+    a->p += sizeof(int);
 }
 void emit_push_float (ASM *a, float value) {
     if (disasm_mode)
-        printf ("%04d  push_float\n", a->p-a->code);
+        printf ("%04d  push_float\n", (int)(a->p-a->code));
     *a->p++ = OP_PUSH_FLOAT;
     *(float*)a->p = value;
-    a->p += 4;
+    a->p += sizeof(float);
 }
 void emit_push_var (ASM *a, UCHAR index) {
     if (disasm_mode)
-        printf ("%04d  push_var      %s\n", a->p-a->code, Gvar[index].name);
+        printf ("%04d  push_var      %s\n", (int)(a->p-a->code), Gvar[index].name);
     *a->p++ = OP_PUSH_VAR;
     *a->p++ = index;
 }
 
 void emit_push_arg (ASM *a, UCHAR i) {
     if (disasm_mode)
-        printf ("%04d  push_arg\n", a->p-a->code);
+        printf ("%04d  push_arg\n", (int)(a->p-a->code));
     *a->p++ = OP_PUSH_ARG;
     *a->p++ = i;
 }
 void emit_push_local (ASM *a, UCHAR i) {
     if (disasm_mode)
-        printf ("%04d  push_local\n", a->p-a->code);
+        printf ("%04d  push_local\n", (int)(a->p-a->code));
     *a->p++ = OP_PUSH_LOCAL;
     *a->p++ = i;
 }
 void emit_push_string (ASM *a, char *s) {
     if (disasm_mode)
-        printf ("%04d  push_string\n", a->p-a->code);
+        printf ("%04d  push_string\n", (int)(a->p-a->code));
     *a->p++ = OP_PUSH_STRING;
     *(void**)a->p = s;
     a->p += sizeof(void*);
 }
 void emit_pop_var (ASM *a, UCHAR i) {
     if (disasm_mode)
-        printf ("%04d  pop_var       %s\n", a->p-a->code, Gvar[i].name);
+        printf ("%04d  pop_var       %s\n", (int)(a->p-a->code), Gvar[i].name);
     *a->p++ = OP_POP_VAR;
     *a->p++ = i;
 }
 void emit_pop_local (ASM *a, UCHAR i) {
     if (disasm_mode)
-        printf ("%04d  pop_local\n", a->p-a->code);
+        printf ("%04d  pop_local\n", (int)(a->p-a->code));
     *a->p++ = OP_POP_LOCAL;
     *a->p++ = i;
 }
 
 void emit_pop_eax (ASM *a) {
     if (disasm_mode)
-        printf ("%04d  pop_eax\n", a->p-a->code);
+        printf ("%04d  pop_eax\n", (int)(a->p-a->code));
     *a->p++ = OP_POP_EAX;
 }
 
 void emit_mul_int (ASM *a) {
     if (disasm_mode)
-        printf ("%04d  mul_int\n", a->p-a->code);
+        printf ("%04d  mul_int\n", (int)(a->p-a->code));
     *a->p++ = OP_MUL_INT;
 }
 void emit_add_int (ASM *a) {
     if (disasm_mode)
-        printf ("%04d  add_int\n", a->p-a->code);
+        printf ("%04d  add_int\n", (int)(a->p-a->code));
     *a->p++ = OP_ADD_INT;
 }
 void emit_add_float (ASM *a) {
     if (disasm_mode)
-        printf ("%04d  add_float\n", a->p-a->code);
+        printf ("%04d  add_float\n", (int)(a->p-a->code));
     *a->p++ = OP_ADD_FLOAT;
 }
 
 void emit_print_eax (ASM *a, UCHAR type) {
     if (disasm_mode) {
         if (type == TYPE_INT)
-            printf ("%04d  print_eax     TYPE_INT\n", a->p-a->code);
+            printf ("%04d  print_eax     TYPE_INT\n", (int)(a->p-a->code));
         if (type == TYPE_FLOAT)
-            printf ("%04d  print_eax     TYPE_FLOAT\n", a->p-a->code);
+            printf ("%04d  print_eax     TYPE_FLOAT\n", (int)(a->p-a->code));
     }
     *a->p++ = OP_PRINT_EAX;
     *a->p++ = type;
 }
 void emit_print_string (ASM *a, UCHAR size, const char *str) {
     if (disasm_mode)
-        printf ("%04d  print_string  %c%s%c\n", a->p-a->code, '"', str, '"');
+        printf ("%04d  print_string  %c%s%c\n", (int)(a->p-a->code), '"', str, '"');
     *a->p++ = OP_PRINT_STRING;
     *a->p++ = size;
     while (*str) {
@@ -557,13 +557,13 @@ void emit_print_string (ASM *a, UCHAR size, const char *str) {
 
 void emit_halt (ASM *a) {
     if (disasm_mode)
-        printf ("%04d  halt\n", a->p-a->code);
+        printf ("%04d  halt\n", (int)(a->p-a->code));
     *a->p++ = OP_HALT;
 }
 
 void emit_call (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
     if (disasm_mode)
-        printf ("%04d  call\n", a->p-a->code);
+        printf ("%04d  call\n", (int)(a->p-a->code));
     *a->p++ = OP_CALL;
     *(void**)a->p = func;
     a->p += sizeof(void*);
@@ -572,7 +572,7 @@ void emit_call (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
 }
 void emit_call_vm (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
     if (disasm_mode)
-        printf ("%04d  call_vm       %s\n", a->p-a->code, ((ASM*)(func))->name);
+        printf ("%04d  call_vm       %s\n", (int)(a->p-a->code), ((ASM*)(func))->name);
     *a->p++ = OP_CALL_VM;
     *(void**)a->p = func;
     a->p += sizeof(void*);
@@ -583,27 +583,27 @@ void emit_call_vm (ASM *a, void *func, UCHAR arg_count, UCHAR return_type) {
 
 void emit_mov_eax_var (ASM *a, UCHAR index) {
     if (disasm_mode)
-        printf ("%04d  mov_var_eax\n", a->p-a->code);
+        printf ("%04d  mov_var_eax\n", (int)(a->p-a->code));
     *a->p++ = OP_MOV_EAX_VAR;
     *a->p++ = index;
 }
 
 void emit_print_local (ASM *a, UCHAR index) {
     if (disasm_mode)
-        printf ("%04d  print_local\n", a->p-a->code);
+        printf ("%04d  print_local\n", (int)(a->p-a->code));
     *a->p++ = OP_PRINT_LOCAL;
     *a->p++ = index;
 }
 
 void emit_inc_var_int (ASM *a, UCHAR index) {
     if (disasm_mode)
-        printf ("%04d  inc_var_int   %s\n", a->p-a->code, Gvar[index].name);
+        printf ("%04d  inc_var_int   %s\n", (int)(a->p-a->code), Gvar[index].name);
     *a->p++ = OP_INC_VAR_INT;
     *a->p++ = index;
 }
 void emit_inc_local_int (ASM *a, UCHAR index) {
     if (disasm_mode)
-        printf ("%04d  inc_local_int %s\n", a->p-a->code, Gvar[index].name);
+        printf ("%04d  inc_local_int %s\n", (int)(a->p-a->code), Gvar[index].name);
     *a->p++ = OP_INC_LOCAL_INT;
     *a->p++ = index;
 }
@@ -614,12 +614,12 @@ UINT asm_get_len (ASM *a) {
 
 void emit_cmp_int (ASM *a) {
     if (disasm_mode)
-        printf ("%04d  cmp_int\n", a->p-a->code);
+        printf ("%04d  cmp_int\n", (int)(a->p-a->code));
     *a->p++ = OP_CMP_INT;
 }
 void emit_jump_jmp (ASM *a, char *name) {
     if (disasm_mode)
-        printf ("%04d  jump_jmp      '%s'\n", a->p-a->code, name);
+        printf ("%04d  jump_jmp      '%s'\n", (int)(a->p-a->code), name);
     ASM_jump *jump;
 
     if (name && (jump = (ASM_jump*)malloc (sizeof(ASM_jump))) != NULL) {
@@ -659,22 +659,22 @@ static void conditional_jump (ASM *vm, char *name, UCHAR type) {
 }
 void emit_jump_jge (ASM *a, char *name) {
     if (disasm_mode)
-        printf ("%04d  jump_jge      '%s'\n", a->p-a->code, name);
+        printf ("%04d  jump_jge      '%s'\n", (int)(a->p-a->code), name);
     conditional_jump (a, name, OP_JUMP_JGE);
 }
 void emit_jump_jle (ASM *a, char *name) {
     if (disasm_mode)
-        printf ("%04d  jump_jle      '%s'\n", a->p-a->code, name);
+        printf ("%04d  jump_jle      '%s'\n", (int)(a->p-a->code), name);
     conditional_jump (a, name, OP_JUMP_JLE);
 }
 void emit_jump_jeq (ASM *a, char *name) {
     if (disasm_mode)
-        printf ("%04d  jump_jeq\n", a->p-a->code);
+        printf ("%04d  jump_jeq\n", (int)(a->p-a->code));
     conditional_jump (a, name, OP_JUMP_JEQ);
 }
 void emit_jump_jne (ASM *a, char *name) {
     if (disasm_mode)
-        printf ("%04d  jump_jne\n", a->p-a->code);
+        printf ("%04d  jump_jne\n", (int)(a->p-a->code));
     conditional_jump (a, name, OP_JUMP_JNE);
 }
 // line: 737
